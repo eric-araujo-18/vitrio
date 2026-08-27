@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import SidebarShopkeeper from "../../components/Sidebar/SidebarShopkeeper";
 import CreateProductModal from "../../components/CreateProductModal/CreateProductModal";
+import ProductCard from "../../components/ProductCard/ProductCard";
 import { getProductsByStore, type Product } from "@/lib/api_product";
 import { getMyStores, type Store} from "@/lib/api";
 import styles from "./Products.module.css";
@@ -83,22 +84,7 @@ export default function ProductsShopkeeper() {
         ) : (
           <div className={styles.grid}>
             {products.map((product) => (
-              <div key={product.id} className={styles.card}>
-                <div className={styles.cardImage}>
-                  {product.images[0] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={product.images[0].url} alt={product.name} />
-                  ) : (
-                    <span className={styles.noImage}>Sem imagem</span>
-                  )}
-                </div>
-                <div className={styles.cardBody}>
-                  <span className={styles.cardName}>{product.name}</span>
-                  <span className={styles.cardPrice}>
-                    R$ {product.price.toFixed(2)}
-                  </span>
-                </div>
-              </div>
+              <ProductCard key={product.id} product={product} />
             ))}
           </div>
         )}

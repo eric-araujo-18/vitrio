@@ -7,6 +7,7 @@ using BackendSystemVitrio.Services.AuthService;
 using BackendSystemVitrio.Services.StoreService; 
 using BackendSystemVitrio.Services.UserService;
 using BackendSystemVitrio.Services.CategoryService;
+using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.Middlewares;
 
@@ -45,6 +46,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStoreService, StoreService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IProductService, ProductService>();
 
 builder.Services.AddAuthentication(options =>
 {
