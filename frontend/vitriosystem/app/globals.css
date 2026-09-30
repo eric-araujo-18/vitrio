@@ -1,41 +1,8 @@
-/* ===========================
-   RESET GLOBAL
-   Este arquivo deve ser importado UMA ÚNICA VEZ,
-   no app/layout.tsx (root layout). Nenhum outro
-   componente deve importar isso de novo.
-=========================== */
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-html,
-body {
-    font-family: "Inter", Arial, Helvetica, sans-serif;
-    background: #f5f7fb;
-    color: #1f2937;
-}
-
-button {
-    cursor: pointer;
-    font-family: inherit;
-}
-
-a {
-    text-decoration: none;
-    color: inherit;
-}
-
-button:active {
-    transform: scale(.98);
-}
+@import "tailwindcss";
 
 /* ===========================
-   VARIÁVEIS DE COR
-   Ajuste os valores abaixo se já existirem
-   em outro lugar do projeto — não duplique.
+   VARIÁVEIS DE COR (legado)
+   Usadas pelas páginas de login/cadastro.
 =========================== */
 
 :root {
@@ -44,33 +11,143 @@ button:active {
 }
 
 /* ===========================
-   SCROLLBAR (afeta qualquer
-   elemento com overflow no app)
+   FONTES
+   As variáveis --font-jakarta e --font-jetbrains
+   vêm do next/font no app/layout.tsx.
 =========================== */
 
-::-webkit-scrollbar {
-    width: 8px;
+@theme inline {
+    --font-sans: var(--font-jakarta), Arial, Helvetica, sans-serif;
+    --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-::-webkit-scrollbar-thumb {
-    background: #cfd8e3;
-    border-radius: 20px;
+/* ===========================
+   TOKENS DO DESIGN (Precision Commerce)
+   Geram classes como bg-primary, text-on-surface,
+   text-display-lg, text-label-sm etc.
+=========================== */
+
+@theme {
+    --color-primary: #004ac6;
+    --color-primary-container: #2563eb;
+    --color-on-primary: #ffffff;
+    --color-primary-fixed: #dbe1ff;
+    --color-on-primary-fixed-variant: #003ea8;
+
+    --color-secondary: #00687a;
+    --color-secondary-container: #57dffe;
+    --color-secondary-fixed: #acedff;
+
+    --color-surface: #f8f9ff;
+    --color-surface-bright: #f8f9ff;
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-low: #eff4ff;
+    --color-surface-container: #e5eeff;
+    --color-on-surface: #0b1c30;
+    --color-on-surface-variant: #434655;
+    --color-outline: #737686;
+
+    --text-display-lg: 40px;
+    --text-display-lg--line-height: 48px;
+    --text-display-lg--letter-spacing: -0.02em;
+    --text-display-lg--font-weight: 700;
+
+    --text-display-lg-mobile: 30px;
+    --text-display-lg-mobile--line-height: 38px;
+    --text-display-lg-mobile--letter-spacing: -0.015em;
+    --text-display-lg-mobile--font-weight: 700;
+
+    --text-headline-md: 22px;
+    --text-headline-md--line-height: 30px;
+    --text-headline-md--letter-spacing: -0.01em;
+    --text-headline-md--font-weight: 600;
+
+    --text-headline-sm: 18px;
+    --text-headline-sm--line-height: 26px;
+    --text-headline-sm--letter-spacing: -0.005em;
+    --text-headline-sm--font-weight: 600;
+
+    --text-title-md: 16px;
+    --text-title-md--line-height: 24px;
+    --text-title-md--font-weight: 600;
+
+    --text-body-lg: 16px;
+    --text-body-lg--line-height: 24px;
+
+    --text-body-md: 14px;
+    --text-body-md--line-height: 20px;
+    --text-body-md--letter-spacing: 0.005em;
+
+    --text-body-sm: 13px;
+    --text-body-sm--line-height: 18px;
+    --text-body-sm--letter-spacing: 0.005em;
+
+    --text-label-md: 13px;
+    --text-label-md--line-height: 18px;
+    --text-label-md--letter-spacing: 0.01em;
+    --text-label-md--font-weight: 500;
+
+    --text-label-sm: 11px;
+    --text-label-sm--line-height: 16px;
+    --text-label-sm--letter-spacing: 0.04em;
+    --text-label-sm--font-weight: 600;
+
+    --text-code-sm: 12px;
+    --text-code-sm--line-height: 16px;
+    --text-code-sm--font-weight: 500;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
-}
+/* ===========================
+   ESTILOS BASE
+   Dentro de @layer base para não sobrescrever
+   as classes do Tailwind.
+=========================== */
 
-* {
-    scrollbar-width: thin;
-    scrollbar-color: #cfd8e3 transparent;
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+
+    html,
+    body {
+        background: #f5f7fb;
+        color: #1f2937;
+    }
+
+    a {
+        text-decoration: none;
+    }
+
+    button {
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    button:active {
+        transform: scale(.98);
+    }
+
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #cfd8e3 transparent;
+    }
+
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: #cfd8e3;
+        border-radius: 20px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
 }
 
 /* ===========================
    KEYFRAMES COMPARTILHADOS
-   Definidos aqui (fora de módulos) para que
-   qualquer .module.css possa referenciar
-   "fadeIn" pelo nome sem duplicar o @keyframes.
 =========================== */
 
 @keyframes fadeIn {
@@ -85,38 +162,14 @@ button:active {
 }
 
 /* ===========================
-   UTILITÁRIOS
-   Classes genéricas usadas por vários componentes
-   (ex: <p className="text-muted">). Como são
-   utilitários "estilo Tailwind", ficam globais
-   de propósito — não fazem sentido escopadas
-   por módulo.
+   UTILITÁRIOS PRÓPRIOS
 =========================== */
 
-.shadow-sm {
-    box-shadow: 0 4px 10px rgba(0, 0, 0, .05);
-}
-
-.shadow-md {
-    box-shadow: 0 10px 25px rgba(0, 0, 0, .08);
-}
-
-.rounded {
-    border-radius: 16px;
-}
-
-.text-muted {
+@utility text-muted {
     color: #6b7280;
 }
 
-.error-text {
+@utility error-text {
     color: #dc2626;
     font-size: 14px;
 }
-
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 16px; }
-.mt-4 { margin-top: 24px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 16px; }
-.mb-4 { margin-bottom: 24px; }

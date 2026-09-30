@@ -1,9 +1,5 @@
-using BackendSystemVitrio.Enum;
-
 namespace BackendSystemVitrio.DTO
 {
-    // Obs: reconstruí este DTO com base no que era usado em AuthService/AuthController,
-    // já que o arquivo original não foi enviado. Ajuste os nomes se divergirem do seu.
     public class RegisterDto
     {
         public required string Name { get; set; }
@@ -14,9 +10,9 @@ namespace BackendSystemVitrio.DTO
         public required string Cpf { get; set; }
 
         public string? Phone { get; set; }
-        public required Role Role { get; set; }
 
-        // StoreName removido: a loja não é mais criada junto com o cadastro,
-        // e sim depois, via POST /api/Store, já autenticado.
+        // Removido "Role": antes o próprio cliente escolhia o papel no cadastro,
+        // então qualquer pessoa podia mandar role = 1 e virar Admin.
+        // Agora todo cadastro público é Shopkeeper (definido no AuthService).
     }
 }

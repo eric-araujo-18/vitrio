@@ -9,6 +9,7 @@ namespace BackendSystemVitrio.DTO
 
         public string? Description { get; set; }
         public string? LogoUrl { get; set; }
+        public string? Phone { get; set; }
 
         public string? PrimaryColor { get; set; }
         public string? SecondaryColor { get; set; }

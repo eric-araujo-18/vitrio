@@ -1,19 +1,28 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi;
 using System.Text;
-using BackendSystemVitrio.Services.AuthService;
-using BackendSystemVitrio.Services.StoreService; 
-using BackendSystemVitrio.Services.UserService;
-using BackendSystemVitrio.Services.CategoryService;
-using BackendSystemVitrio.Services.ProductService;
+using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.Middlewares;
+using BackendSystemVitrio.Services.AuthService;
+using BackendSystemVitrio.Services.CategoryService;
+using BackendSystemVitrio.Services.OrderService;
+using BackendSystemVitrio.Services.ProductService;
+using BackendSystemVitrio.Services.PublicService;
+using BackendSystemVitrio.Services.StoreService;
+using BackendSystemVitrio.Services.UserService;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    // Enums trafegam como texto ("Pending", "Shopkeeper") — mais legível no
+    // frontend. Números continuam sendo aceitos na entrada.
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -31,7 +40,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Cole aqui o token retornado pelo login/registro. Não precisa digitar \"Bearer \" antes, o Swagger adiciona sozinho."
+        Description = "Cole aqui o token retornado pelo login. Não precisa digitar \"Bearer \" antes."
     };
 
     options.AddSecurityDefinition("Bearer", bearerScheme);
@@ -47,6 +56,8 @@ builder.Services.AddScoped<IStoreService, StoreService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IPublicService, PublicService>();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -64,7 +75,9 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+        // Padrão é 5 min de tolerância — com access token de 15 min isso é muito.
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
@@ -73,15 +86,35 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 const string CorsPolicy = "FrontendPolicy";
 
+// Origens vêm do appsettings (Cors:AllowedOrigins) pra não precisar mexer
+// no código ao publicar. Fallback: localhost:3000.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                     ?? new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(CorsPolicy, policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); // permite envio/recebimento do cookie HttpOnly do refresh token
+              .AllowCredentials(); // cookie HttpOnly do refresh token
     });
+});
+
+// Limite de pedidos públicos: 10 por minuto por IP.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("public-orders", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
 });
 
 builder.Services.AddAuthorization();
@@ -102,6 +135,8 @@ app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 app.MapControllers();
 

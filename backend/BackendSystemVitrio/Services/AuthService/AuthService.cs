@@ -2,7 +2,6 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Models;
@@ -10,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BackendSystemVitrio.Wrappers;
 using BackendSystemVitrio.Enum;
+using BackendSystemVitrio.Helpers;
 
 namespace BackendSystemVitrio.Services.AuthService
 {
@@ -30,9 +30,9 @@ namespace BackendSystemVitrio.Services.AuthService
 
             try
             {
-                var normalizedCpf = OnlyDigits(dto.Cpf);
+                var normalizedCpf = SlugHelper.OnlyDigits(dto.Cpf);
 
-                if (normalizedCpf is null)
+                if (normalizedCpf is null || normalizedCpf.Length != 11)
                 {
                     response.Dados = null;
                     response.Mensagem = "CPF inválido.";
@@ -49,7 +49,25 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                var emailExists = await _context.User.AnyAsync(u => u.Email == dto.Email);
+                if (string.IsNullOrWhiteSpace(dto.Name))
+                {
+                    response.Dados = null;
+                    response.Mensagem = "Informe seu nome.";
+                    response.Status = false;
+                    return response;
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
+                {
+                    response.Dados = null;
+                    response.Mensagem = "A senha precisa ter pelo menos 6 caracteres.";
+                    response.Status = false;
+                    return response;
+                }
+
+                var email = dto.Email.Trim().ToLowerInvariant();
+
+                var emailExists = await _context.User.AnyAsync(u => u.Email == email);
                 if (emailExists)
                 {
                     response.Dados = null;
@@ -58,24 +76,22 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                CreatePasswordHash(dto.Password, out byte[] hash, out byte[] salt);
+                PasswordHelper.CreatePasswordHash(dto.Password, out byte[] hash, out byte[] salt);
 
                 var user = new User
                 {
-                    Name = dto.Name,
-                    Email = dto.Email,
-                    Role = dto.Role,
-                    Phone = dto.Phone,
+                    Name = dto.Name.Trim(),
+                    Email = email,
+                    // Cadastro público sempre cria lojista. Admin só direto no banco.
+                    Role = Role.Shopkeeper,
+                    Phone = string.IsNullOrWhiteSpace(dto.Phone) ? null : dto.Phone.Trim(),
                     Cpf = normalizedCpf,
                     PasswordHash = hash,
                     PasswordSalt = salt
                 };
 
-                await using var transaction = await _context.Database.BeginTransactionAsync();
-
                 _context.User.Add(user);
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
 
                 response.Dados = "Usuário cadastrado com sucesso.";
                 response.Mensagem = null;
@@ -97,7 +113,7 @@ namespace BackendSystemVitrio.Services.AuthService
 
             try
             {
-                var cpf = OnlyDigits(dto.Cpf);
+                var cpf = SlugHelper.OnlyDigits(dto.Cpf);
 
                 if (cpf is null)
                 {
@@ -107,20 +123,15 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                var user = await _context.User.FirstOrDefaultAsync(u => u.Cpf == cpf);
+                var user = await _context.User
+                    .FirstOrDefaultAsync(u => u.Cpf == cpf && u.DeletionDate == null);
 
-                if (user is null)
+                // Mesma mensagem pros dois casos: separar "usuário não encontrado"
+                // de "senha incorreta" permite descobrir quais CPFs têm conta.
+                if (user is null || !PasswordHelper.VerifyPasswordHash(dto.Password, user.PasswordHash, user.PasswordSalt))
                 {
                     response.Dados = null;
-                    response.Mensagem = "Usuário não encontrado.";
-                    response.Status = false;
-                    return response;
-                }
-
-                if (!VerifyPasswordHash(dto.Password, user.PasswordHash, user.PasswordSalt))
-                {
-                    response.Dados = null;
-                    response.Mensagem = "Senha incorreta.";
+                    response.Mensagem = "CPF ou senha incorretos.";
                     response.Status = false;
                     return response;
                 }
@@ -308,29 +319,6 @@ namespace BackendSystemVitrio.Services.AuthService
                 .Replace("+", "-")
                 .Replace("/", "_")
                 .Replace("=", "");
-        }
-
-        private static void CreatePasswordHash(string password, out byte[] hash, out byte[] salt)
-        {
-            using var hmac = new HMACSHA512();
-            salt = hmac.Key;
-            hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-        }
-
-        private static bool VerifyPasswordHash(string password, byte[] hash, byte[] salt)
-        {
-            using var hmac = new HMACSHA512(salt);
-            var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return computedHash.SequenceEqual(hash);
-        }
-
-        private static string? OnlyDigits(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return null;
-
-            var digits = Regex.Replace(value, @"\D", "");
-            return digits.Length == 0 ? null : digits;
         }
     }
 }

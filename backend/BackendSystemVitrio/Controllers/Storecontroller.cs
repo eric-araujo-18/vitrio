@@ -1,7 +1,6 @@
-using System.Security.Claims;
 using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Extensions;
 using BackendSystemVitrio.Services.StoreService;
-using BackendSystemVitrio.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,7 +8,7 @@ namespace BackendSystemVitrio.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Shopkeeper,Admin")] // exige o JWT gerado no login/registro
+    [Authorize(Roles = "Shopkeeper,Admin")]
     public class StoreController : ControllerBase
     {
         private readonly IStoreService _storeService;
@@ -22,32 +21,31 @@ namespace BackendSystemVitrio.Controllers
         // GET /api/Store -> todas as lojas do usuário logado
         [HttpGet]
         public async Task<IActionResult> GetMyStores()
-        {
-            var response = await _storeService.GetStoresByUserAsync(GetUserId());
-            return Ok(response);
-        }
+            => Ok(await _storeService.GetStoresByUserAsync(User.GetUserId()));
 
         // GET /api/Store/{id}
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
-        {
-            var response = await _storeService.GetByIdAsync(id, GetUserId());
-            return Ok(response);
-        }
+            => Ok(await _storeService.GetByIdAsync(id, User.GetUserId()));
 
-        // POST /api/Store -> cria uma nova loja para o usuário logado
+        // GET /api/Store/{id}/dashboard -> números da tela inicial do painel
+        [HttpGet("{id:int}/dashboard")]
+        public async Task<IActionResult> GetDashboard(int id)
+            => Ok(await _storeService.GetDashboardAsync(id, User.GetUserId()));
+
+        // POST /api/Store
         [HttpPost]
         public async Task<IActionResult> Create(CreateStoreDto dto)
-        {
-            var response = await _storeService.CreateAsync(GetUserId(), dto);
-            return Ok(response);
-        }
+            => Ok(await _storeService.CreateAsync(User.GetUserId(), dto));
 
+        // PUT /api/Store/{id}
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult> Update(int id, UpdateStoreDto dto)
+            => Ok(await _storeService.UpdateAsync(id, User.GetUserId(), dto));
 
-        private int GetUserId()
-        {
-            var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return int.Parse(claim!);
-        }
+        // DELETE /api/Store/{id} (soft delete)
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> Delete(int id)
+            => Ok(await _storeService.DeleteAsync(id, User.GetUserId()));
     }
 }

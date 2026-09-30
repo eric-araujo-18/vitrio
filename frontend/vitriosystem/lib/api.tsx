@@ -12,16 +12,15 @@ export const ROLES = {
   SHOPKEEPER: "Shopkeeper",
 } as const;
 
-export const SHOPKEEPER_ROLE = 2 as const;
-export type Role = typeof SHOPKEEPER_ROLE;
+// ===== Tipos =====
 
 export interface RegisterPayload {
   name: string;
   email: string;
   password: string;
-  role: Role;
   phone?: string;
   cpf: string;
+  // "role" removido: o backend agora sempre cria o usuário como Shopkeeper.
 }
 
 export interface LoginPayload {
@@ -29,10 +28,15 @@ export interface LoginPayload {
   password: string;
 }
 
-export interface updateProfilePayload {
+export interface UpdateProfilePayload {
   name: string;
   email: string;
   phone: string;
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface User {
@@ -51,6 +55,7 @@ export interface Store {
   cnpj: string | null;
   description: string | null;
   logoUrl: string | null;
+  phone: string | null;
   primaryColor: string;
   secondaryColor: string;
   tertiaryColor: string;
@@ -63,11 +68,13 @@ export interface CreateStorePayload {
   cnpj?: string;
   description?: string;
   logoUrl?: string;
+  phone?: string;
   primaryColor?: string;
   secondaryColor?: string;
   tertiaryColor?: string;
 }
 
+// Para limpar um campo opcional, mande string vazia "".
 export interface UpdateStorePayload extends Partial<CreateStorePayload> {
   isActive?: boolean;
 }
@@ -86,6 +93,10 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+export function getApiUrl() {
+  return API_URL;
+}
+
 // ===== Requisição base =====
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -94,6 +105,9 @@ async function parseResponse<T>(res: Response): Promise<ApiResponse<T>> {
   const rawText = await res.text();
 
   if (!rawText) {
+    if (res.status === 429) {
+      return { dados: null, mensagem: "Muitas tentativas. Aguarde um minuto e tente de novo.", status: false };
+    }
     return { dados: null, mensagem: res.ok ? null : "Erro ao processar a solicitação.", status: res.ok };
   }
 
@@ -149,12 +163,17 @@ export async function request<T>(
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers,
-    credentials: "include", // sempre manda o cookie do refresh token, mesmo em rotas sem "auth"
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers,
+      credentials: "include",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error("Não foi possível conectar ao servidor.");
+  }
 
   // Access token expirou no meio da sessão: tenta renovar 1 vez e refaz a chamada original.
   if (res.status === 401 && auth && !isRetry) {
@@ -176,6 +195,17 @@ export async function request<T>(
   }
 
   return data;
+}
+
+// O backend responde 200 mesmo quando a regra de negócio falha (status: false).
+// unwrap() transforma isso em exceção, pra usar com try/catch direto:
+//   const store = await unwrap(getStoreById(1));
+export async function unwrap<T>(promise: Promise<ApiResponse<T>>): Promise<T> {
+  const res = await promise;
+  if (!res.status) {
+    throw new Error(res.mensagem ?? "Não foi possível concluir a operação.");
+  }
+  return res.dados as T;
 }
 
 // ===== Auth =====
@@ -208,13 +238,21 @@ export async function bootstrapSession(): Promise<boolean> {
   return tryRefreshAccessToken();
 }
 
-// ===== Usuário logado (rota autenticada) =====
+// ===== Usuário logado =====
 
 export function getMe() {
   return request<User>("/api/Auth/me", "GET", undefined, true);
 }
 
-// ===== Store (rotas autenticadas) =====
+export function updateMyProfile(payload: UpdateProfilePayload) {
+  return request<User>("/api/User/update-profile", "PUT", payload, true);
+}
+
+export function changePassword(payload: ChangePasswordPayload) {
+  return request<string>("/api/User/change-password", "PUT", payload, true);
+}
+
+// ===== Store =====
 
 export function getMyStores() {
   return request<Store[]>("/api/Store", "GET", undefined, true);
@@ -234,8 +272,4 @@ export function updateStore(id: number, payload: UpdateStorePayload) {
 
 export function deleteStore(id: number) {
   return request<string>(`/api/Store/${id}`, "DELETE", undefined, true);
-}
-
-export function updateMyProfile(payload: updateProfilePayload) {
-  return request<string>("/api/User/update-profile", "PUT", payload, true);
 }

@@ -3,10 +3,12 @@
 import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { IdCard, Lock, LogIn } from "lucide-react";
 import { login } from "@/lib/api";
 import { formatCpf, isValidCpf } from "@/lib/validators";
 import { useAuth, useGuestOnly } from "@/lib/auth_context";
-import styles from "./Auth.module.css";
+import { AuthLayout } from "../Auth/components/AuthLayout";
+import { AuthError, AuthInput, AuthSubmit } from "../Auth/components/AuthFields";
 
 export default function Login() {
   const router = useRouter();
@@ -51,48 +53,51 @@ export default function Login() {
   if (guestOnlyLoading) return null;
 
   return (
-    <div className={styles.authPage}>
-      <div className={styles.authCard}>
-        <Link href="/" className={styles.authLogo}>
-          <h2>Vitrio System</h2>
-        </Link>
+    <AuthLayout
+      title="Entrar"
+      subtitle="Acesse sua conta para continuar."
+      footer={
+        <>
+          Não tem uma conta?{" "}
+          <Link href="/auth/register" className="font-semibold text-primary hover:underline">
+            Criar conta
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <AuthInput
+          id="cpf"
+          label="CPF"
+          icon={IdCard}
+          inputMode="numeric"
+          autoComplete="username"
+          placeholder="000.000.000-00"
+          value={cpf}
+          onChange={(e) => setCpf(formatCpf(e.target.value))}
+          maxLength={14}
+          required
+        />
 
-        <h1>Entrar</h1>
-        <p className={styles.authSubtitle}>Acesse sua conta para continuar.</p>
+        <AuthInput
+          id="password"
+          label="Senha"
+          icon={Lock}
+          type="password"
+          autoComplete="current-password"
+          placeholder="Sua senha"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-        <form onSubmit={handleSubmit} className={styles.authForm} noValidate>
-          <label htmlFor="cpf">CPF</label>
-          <input
-            id="cpf"
-            type="text"
-            inputMode="numeric"
-            placeholder="000.000.000-00"
-            value={cpf}
-            onChange={(e) => setCpf(formatCpf(e.target.value))}
-            maxLength={14}
-            required
-          />
+        {error && <AuthError>{error}</AuthError>}
 
-          <label htmlFor="password">Senha</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-
-          {error && <p className={styles.authError}>{error}</p>}
-
-          <button type="submit" className={styles.btnPrimary} disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
-
-        <p className={styles.authSwitch}>
-          Não tem uma conta? <Link href="/auth/register">Criar conta</Link>
-        </p>
-      </div>
-    </div>
+        <AuthSubmit loading={loading} loadingText="Entrando...">
+          <LogIn size={18} aria-hidden="true" />
+          Entrar
+        </AuthSubmit>
+      </form>
+    </AuthLayout>
   );
 }

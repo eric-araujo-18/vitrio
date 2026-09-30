@@ -1,16 +1,11 @@
-
-using BackendSystemVitrio.Models;
-using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
-using System.Linq;
+using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Extensions;
 using BackendSystemVitrio.Services.UserService;
 using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
-using BackendSystemVitrio.DTO;
+using Microsoft.AspNetCore.Mvc;
 
 namespace BackendSystemVitrio.Controllers
 {
-
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -23,19 +18,14 @@ namespace BackendSystemVitrio.Controllers
             _userService = userService;
         }
 
+        // PUT /api/User/update-profile
         [HttpPut("update-profile")]
         public async Task<IActionResult> UpdateMyProfile(UpdateUserDto dto)
-        {
-            var response = await _userService.UpdateUserAsync(GetUserId(), dto);
-            return Ok(response);
-        }
+            => Ok(await _userService.UpdateUserAsync(User.GetUserId(), dto));
 
-        private int GetUserId()
-        {
-            var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return int.Parse(claim!);
-        }
-
-
+        // PUT /api/User/change-password
+        [HttpPut("change-password")]
+        public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
+            => Ok(await _userService.ChangePasswordAsync(User.GetUserId(), dto));
     }
 }

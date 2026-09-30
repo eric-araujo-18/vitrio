@@ -9,27 +9,36 @@ namespace BackendSystemVitrio.DTO
     public class CreateProductDto
     {
         public required int StoreId { get; set; }
-
         public int? CategoryId { get; set; }
-
         public required string Name { get; set; }
 
-        public required string Slug { get; set; }
+        // Opcional: se vier vazio, é gerado a partir do Name.
+        public string? Slug { get; set; }
 
         public string? Description { get; set; }
-
         public string? Sku { get; set; }
-
         public decimal Price { get; set; }
-
         public decimal? PromotionalPrice { get; set; }
-
         public int StockQuantity { get; set; } = 0;
-
         public bool IsActive { get; set; } = true;
-
         public bool IsFeatured { get; set; } = false;
+        public List<CreateProductImageDto>? Images { get; set; }
+    }
 
+    // Atualização completa (o formulário de edição manda todos os campos).
+    // Images: se vier (mesmo vazia), substitui a lista inteira de imagens.
+    public class UpdateProductDto
+    {
+        public int? CategoryId { get; set; }
+        public required string Name { get; set; }
+        public string? Slug { get; set; }
+        public string? Description { get; set; }
+        public string? Sku { get; set; }
+        public decimal Price { get; set; }
+        public decimal? PromotionalPrice { get; set; }
+        public int StockQuantity { get; set; }
+        public bool IsActive { get; set; }
+        public bool IsFeatured { get; set; }
         public List<CreateProductImageDto>? Images { get; set; }
     }
 
@@ -45,6 +54,7 @@ namespace BackendSystemVitrio.DTO
     {
         public int Id { get; set; }
         public required string Name { get; set; }
+        public string? Slug { get; set; }
     }
 
     public class ProductResponseDto

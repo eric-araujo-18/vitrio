@@ -16,6 +16,9 @@ interface AuthContextValue {
   loading: boolean;
   logout: () => void;
   refresh: () => Promise<void>;
+  // Recarrega os dados do usuário sem ligar o "loading" global
+  // (usado depois de editar o perfil, pra não desmontar a tela).
+  reloadUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -52,6 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const reloadUser = useCallback(async () => {
+    try {
+      const { dados } = await getMe();
+      if (dados) setUser(dados);
+    } catch {
+      // mantém o usuário atual; um 401 real já dispara "auth:unauthorized"
+    }
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -67,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, logout, refresh, reloadUser }}>
       {children}
     </AuthContext.Provider>
   );

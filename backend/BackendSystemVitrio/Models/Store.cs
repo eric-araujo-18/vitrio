@@ -6,8 +6,9 @@ namespace BackendSystemVitrio.Models
 
         public required string Name { get; set; }
 
-        // Usado em URLs públicas da loja, ex: vitrio.com/loja/casa-da-erica
+        // Usado em URLs públicas da loja, ex: /store/casa-da-erica
         // Gerado automaticamente a partir do Name no momento do cadastro.
+        // Não muda quando a loja é renomeada, pra não quebrar links já divulgados.
         public required string Slug { get; set; }
 
         // CNPJ da loja (opcional - MEI pode se registrar só com CPF do dono).
@@ -15,6 +16,9 @@ namespace BackendSystemVitrio.Models
 
         public string? Description { get; set; }
         public string? LogoUrl { get; set; }
+
+        // Contato exibido na vitrine (ex: WhatsApp da loja)
+        public string? Phone { get; set; }
 
         // Cores usadas para personalizar a vitrine pública da loja
         public string PrimaryColor { get; set; } = "#2563eb";
@@ -27,7 +31,7 @@ namespace BackendSystemVitrio.Models
         public DateTime CreationDate { get; set; } = DateTime.UtcNow;
         public DateTime? DeletionDate { get; set; } = null;
 
-        // Dono da loja (1 usuário -> 1 loja, por enquanto)
+        // Dono da loja (1 usuário -> N lojas)
         public required int UserId { get; set; }
         public User? User { get; set; }
     }

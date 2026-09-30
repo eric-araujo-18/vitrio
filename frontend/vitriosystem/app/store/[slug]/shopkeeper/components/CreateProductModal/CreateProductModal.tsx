@@ -1,19 +1,40 @@
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
-import { X, Package, Trash2 } from "lucide-react";
-import { createProduct, type Product, type CreateProductPayload } from "@/lib/api_product";
-import {getCategoriesByStore , type Category} from "@/lib/api_category"
-import { uploadImage } from "@/app/api/upload/upload";
-import styles from "./CreateProductModal.module.css";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import {
+  Eye,
+  ImagePlus,
+  LoaderCircle,
+  Package,
+  Plus,
+  Save,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
+import { unwrap } from "@/lib/api";
+import {
+  createProduct,
+  updateProduct,
+  type Product,
+  type UpdateProductPayload,
+} from "@/lib/api_product";
+import { getCategoriesByStore, type Category } from "@/lib/api_category";
+import { uploadImage } from "@/lib/upload";
+import { ErrorBox, btnPrimary, btnSecondary, hint, input, label } from "../Ui";
+
+const MAX_IMAGES = 8;
 
 interface CreateProductModalProps {
   storeId: number;
+  /** Se vier, o modal abre em modo edição. */
+  product?: Product;
   onClose: () => void;
-  onCreated: (product: Product) => void;
+  onSaved: (product: Product) => void;
 }
 
 interface PendingImage {
+  key: string; // chave estável (não usar índice: a lista muda durante o upload)
   url: string;
   uploading: boolean;
 }
@@ -25,78 +46,122 @@ function slugify(text: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9\s-]/g, "")
     .trim()
-    .replace(/\s+/g, "-");
+    .replace(/[\s-]+/g, "-");
 }
 
-export default function CreateProductModal({ storeId, onClose, onCreated }: CreateProductModalProps) {
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [description, setDescription] = useState("");
-  const [sku, setSku] = useState("");
-  const [price, setPrice] = useState("");
-  const [promotionalPrice, setPromotionalPrice] = useState("");
-  const [stockQuantity, setStockQuantity] = useState("0");
-  const [isActive, setIsActive] = useState(true);
-  const [isFeatured, setIsFeatured] = useState(false);
-  const [images, setImages] = useState<PendingImage[]>([]);
+// "12,50" / "12.50" / "1.234,56" -> 12.5 / 12.5 / 1234.56
+function parseMoney(value: string): number {
+  const clean = value.trim().replace(/\s|R\$/g, "");
+  if (!clean) return NaN;
+  const normalized = clean.includes(",") ? clean.replace(/\./g, "").replace(",", ".") : clean;
+  return Number(normalized);
+}
 
+function moneyToInput(value: number | null | undefined) {
+  return value == null ? "" : value.toFixed(2).replace(".", ",");
+}
+
+let keySeq = 0;
+const newKey = () => `img-${Date.now()}-${keySeq++}`;
+
+export default function CreateProductModal({ storeId, product, onClose, onSaved }: CreateProductModalProps) {
+  const isEdit = !!product;
+
+  const [name, setName] = useState(product?.name ?? "");
+  const [slug, setSlug] = useState(product?.slug ?? "");
+  const [slugTouched, setSlugTouched] = useState(isEdit);
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [sku, setSku] = useState(product?.sku ?? "");
+  const [price, setPrice] = useState(moneyToInput(product?.price));
+  const [promotionalPrice, setPromotionalPrice] = useState(moneyToInput(product?.promotionalPrice));
+  const [stockQuantity, setStockQuantity] = useState(String(product?.stockQuantity ?? 0));
+  const [isActive, setIsActive] = useState(product?.isActive ?? true);
+  const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false);
+  const [categoryId, setCategoryId] = useState<string>(product?.categoryId ? String(product.categoryId) : "");
+  const [images, setImages] = useState<PendingImage[]>(
+    (product?.images ?? []).map((img) => ({ key: newKey(), url: img.url, uploading: false }))
+  );
+
+  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState<string>("");
+  const isUploading = images.some((img) => img.uploading);
+  const canAddImages = images.length < MAX_IMAGES;
 
-  
-    useEffect(() => {
-        let active = true;
+  useEffect(() => {
+    let active = true;
+    getCategoriesByStore(storeId)
+      .then(({ dados }) => active && setCategories(dados ?? []))
+      .catch(() => active && setCategories([]));
+    return () => {
+      active = false;
+    };
+  }, [storeId]);
 
-        async function loadCategories() {
-            try {
-            const { dados } = await getCategoriesByStore(storeId);
-            if (active) setCategories(dados ?? []);
-            } catch {
-            if (active) setCategories([]);
-            }
-        }
+  // Fecha com Esc
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !loading && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, loading]);
 
-        loadCategories();
-        return () => {
-            active = false;
-        };
-    }, [storeId]);
+  // Trava o scroll da página enquanto o modal está aberto
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   function handleNameChange(value: string) {
     setName(value);
     if (!slugTouched) setSlug(slugify(value));
   }
 
-  async function handleImagesSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  async function handleImagesSelected(e: ChangeEvent<HTMLInputElement>) {
+    const inputEl = e.target;
+    const files = Array.from(inputEl.files ?? []);
+    inputEl.value = "";
     if (files.length === 0) return;
 
-    const startIndex = images.length;
-    setImages((prev) => [...prev, ...files.map(() => ({ url: "", uploading: true }))]);
-
-    for (let i = 0; i < files.length; i++) {
-      try {
-        const url = await uploadImage(files[i]);
-        setImages((prev) => {
-          const next = [...prev];
-          next[startIndex + i] = { url, uploading: false };
-          return next;
-        });
-      } catch {
-        setImages((prev) => prev.filter((_, idx) => idx !== startIndex + i));
-        setError("Falha ao enviar uma das imagens.");
-      }
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      setError(`Máximo de ${MAX_IMAGES} imagens por produto.`);
+      return;
     }
 
-    e.target.value = "";
+    const selected = files.slice(0, room);
+    if (files.length > room) setError(`Só ${room} imagem(ns) foram adicionadas (limite de ${MAX_IMAGES}).`);
+
+    const placeholders = selected.map(() => ({ key: newKey(), url: "", uploading: true }));
+    setImages((prev) => [...prev, ...placeholders]);
+
+    // Uploads em paralelo; cada um atualiza o próprio placeholder pela key.
+    await Promise.all(
+      selected.map(async (file, i) => {
+        const key = placeholders[i].key;
+        try {
+          const url = await uploadImage(file);
+          setImages((prev) => prev.map((img) => (img.key === key ? { ...img, url, uploading: false } : img)));
+        } catch (err) {
+          setImages((prev) => prev.filter((img) => img.key !== key));
+          setError(err instanceof Error ? err.message : "Falha ao enviar uma das imagens.");
+        }
+      })
+    );
   }
 
-  function removeImage(index: number) {
-    setImages((prev) => prev.filter((_, i) => i !== index));
+  function removeImage(key: string) {
+    setImages((prev) => prev.filter((img) => img.key !== key));
+  }
+
+  function makeCover(key: string) {
+    setImages((prev) => {
+      const target = prev.find((img) => img.key === key);
+      return target ? [target, ...prev.filter((img) => img.key !== key)] : prev;
+    });
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -108,205 +173,447 @@ export default function CreateProductModal({ storeId, onClose, onCreated }: Crea
       return;
     }
 
-    const priceValue = Number(price.replace(",", "."));
-    if (!price || Number.isNaN(priceValue) || priceValue <= 0) {
+    const priceValue = parseMoney(price);
+    if (Number.isNaN(priceValue) || priceValue <= 0) {
       setError("Informe um preço válido.");
       return;
     }
 
-    const promoValue = promotionalPrice ? Number(promotionalPrice.replace(",", ".")) : undefined;
-    if (promoValue !== undefined && (Number.isNaN(promoValue) || promoValue >= priceValue)) {
+    const promoValue = promotionalPrice.trim() ? parseMoney(promotionalPrice) : undefined;
+    if (promoValue !== undefined && (Number.isNaN(promoValue) || promoValue <= 0 || promoValue >= priceValue)) {
       setError("O preço promocional precisa ser menor que o preço normal.");
       return;
     }
 
-    if (images.some((img) => img.uploading)) {
+    const stockValue = Number(stockQuantity);
+    if (!Number.isInteger(stockValue) || stockValue < 0) {
+      setError("O estoque precisa ser um número inteiro maior ou igual a zero.");
+      return;
+    }
+
+    if (isUploading) {
       setError("Aguarde o envio das imagens terminar.");
       return;
     }
 
+    const payload: UpdateProductPayload = {
+      categoryId: categoryId ? Number(categoryId) : undefined,
+      name: name.trim(),
+      slug: slug.trim() || slugify(name),
+      description: description.trim() || undefined,
+      sku: sku.trim() || undefined,
+      price: priceValue,
+      promotionalPrice: promoValue,
+      stockQuantity: stockValue,
+      isActive,
+      isFeatured,
+      images: images.map((img, index) => ({ url: img.url, order: index })),
+    };
+
     setLoading(true);
-
     try {
-        const payload: CreateProductPayload = {
-        storeId,
-        categoryId: categoryId ? Number(categoryId) : undefined,
-        name: name.trim(),
-        slug: slug.trim() || slugify(name),
-        description: description.trim() || undefined,
-        sku: sku.trim() || undefined,
-        price: priceValue,
-        promotionalPrice: promoValue,
-        stockQuantity: Number(stockQuantity) || 0,
-        isActive,
-        isFeatured,
-        images: images.map((img, index) => ({ url: img.url, order: index })),
-        };
-
-      const { dados } = await createProduct(payload);
-      if (dados) onCreated(dados);
+      const saved = product
+        ? await unwrap(updateProduct(product.id, payload))
+        : await unwrap(createProduct({ ...payload, storeId }));
+      onSaved(saved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar produto.");
+      setError(err instanceof Error ? err.message : "Erro ao salvar produto.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <div className={styles.modalTitle}>
-            <div className={styles.modalIcon}>
-              <Package size={20} />
+    <div
+      className="fixed inset-0 z-[1000] flex animate-overlay-in items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+      onClick={() => !loading && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92vh] w-full max-w-[600px] animate-modal-in flex-col overflow-hidden rounded-2xl bg-white shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)]"
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 pt-6 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-fixed/50 text-primary-container">
+              <Package size={20} aria-hidden="true" />
             </div>
-            <h2>Novo Produto</h2>
+            <div>
+              <h2 id="product-modal-title" className="text-headline-sm text-on-surface">
+                {isEdit ? "Editar produto" : "Novo produto"}
+              </h2>
+              <p className="text-body-sm text-on-surface-variant">
+                {isEdit ? "Altere os dados e salve." : "Você pode ajustar tudo isso depois."}
+              </p>
+            </div>
           </div>
-          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Fechar">
-            <X size={20} />
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Fechar"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:opacity-60"
+          >
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
-        <p className={styles.modalSubtitle}>
-          Preencha os dados do produto. Você pode ajustar tudo isso depois.
-        </p>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" noValidate>
+          {/* Corpo com rolagem */}
+          <div className="flex flex-col gap-7 overflow-y-auto px-6 py-5">
+            {/* Informações */}
+            <Section title="Informações">
+              <Field id="productName" label="Nome do produto" required>
+                <input
+                  id="productName"
+                  value={name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="Ex: Camiseta Básica"
+                  maxLength={150}
+                  required
+                  autoFocus={!isEdit}
+                  className={input}
+                />
+              </Field>
 
-        <form onSubmit={handleSubmit} className={styles.modalForm} noValidate>
-          <label htmlFor="productName">Nome do produto *</label>
-          <input
-            id="productName"
-            value={name}
-            onChange={(e) => handleNameChange(e.target.value)}
-            placeholder="Ex: Camiseta Básica"
-            required
-          />
+              <Field id="productSlug" label="Slug (URL)" hint="Gerado a partir do nome. Só letras, números e hífens.">
+                <input
+                  id="productSlug"
+                  value={slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    setSlug(slugify(e.target.value));
+                  }}
+                  placeholder="camiseta-basica"
+                  className={`${input} font-mono text-code-sm`}
+                />
+              </Field>
 
-          <label htmlFor="productSlug">Slug (URL)</label>
-          <input
-            id="productSlug"
-            value={slug}
-            onChange={(e) => {
-              setSlugTouched(true);
-              setSlug(slugify(e.target.value));
-            }}
-            placeholder="camiseta-basica"
-          />
+              <Field id="productDescription" label="Descrição">
+                <textarea
+                  id="productDescription"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Detalhes do produto"
+                  rows={3}
+                  className={`${input} resize-y`}
+                />
+              </Field>
 
-          <label htmlFor="productDescription">Descrição</label>
-          <textarea
-            id="productDescription"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Detalhes do produto"
-            rows={3}
-          />
-          <label htmlFor="productCategory">Categoria</label>
-            <select
-            id="productCategory"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field id="productCategory" label="Categoria">
+                  <select
+                    id="productCategory"
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className={input}
+                  >
+                    <option value="">Sem categoria</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                        {!cat.isActive ? " (inativa)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field id="productSku" label="SKU">
+                  <input
+                    id="productSku"
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                    placeholder="Ex: CAM-001"
+                    className={`${input} font-mono text-code-sm`}
+                  />
+                </Field>
+              </div>
+            </Section>
+
+            {/* Preço e estoque */}
+            <Section title="Preço e estoque">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field id="productPrice" label="Preço" required>
+                  <MoneyInput
+                    id="productPrice"
+                    value={price}
+                    onChange={setPrice}
+                    required
+                  />
+                </Field>
+                <Field id="productPromoPrice" label="Promocional">
+                  <MoneyInput id="productPromoPrice" value={promotionalPrice} onChange={setPromotionalPrice} />
+                </Field>
+                <Field id="productStock" label="Estoque">
+                  <input
+                    id="productStock"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={stockQuantity}
+                    onChange={(e) => setStockQuantity(e.target.value)}
+                    className={`${input} tabular-nums`}
+                  />
+                </Field>
+              </div>
+            </Section>
+
+            {/* Visibilidade */}
+            <Section title="Visibilidade">
+              <div className="flex flex-col divide-y divide-slate-100 rounded-xl border border-slate-200">
+                <Toggle
+                  id="productActive"
+                  icon={<Eye size={16} aria-hidden="true" />}
+                  label="Ativo na vitrine"
+                  description="Clientes conseguem ver e comprar."
+                  checked={isActive}
+                  onChange={setIsActive}
+                />
+                <Toggle
+                  id="productFeatured"
+                  icon={<Star size={16} aria-hidden="true" />}
+                  label="Produto em destaque"
+                  description="Aparece na seção de destaques da vitrine."
+                  checked={isFeatured}
+                  onChange={setIsFeatured}
+                />
+              </div>
+            </Section>
+
+            {/* Imagens */}
+            <Section
+              title="Imagens"
+              aside={
+                <span className="text-body-sm text-outline tabular-nums">
+                  {images.length}/{MAX_IMAGES}
+                </span>
+              }
             >
-            <option value="">Sem categoria</option>
-            {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                {cat.name}
-                </option>
-            ))}
-            </select>
-
-          <div className={styles.row}>
-            <div className={styles.field}>
-              <label htmlFor="productSku">SKU</label>
-              <input id="productSku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ex: CAM-001" />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="productStock">Estoque</label>
               <input
-                id="productStock"
-                type="number"
-                min={0}
-                value={stockQuantity}
-                onChange={(e) => setStockQuantity(e.target.value)}
+                id="productImages"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={handleImagesSelected}
+                disabled={!canAddImages}
+                className="sr-only"
               />
-            </div>
-          </div>
 
-          <div className={styles.row}>
-            <div className={styles.field}>
-              <label htmlFor="productPrice">Preço (R$) *</label>
-              <input
-                id="productPrice"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="0,00"
-                inputMode="decimal"
-                required
-              />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="productPromoPrice">Preço promocional</label>
-              <input
-                id="productPromoPrice"
-                value={promotionalPrice}
-                onChange={(e) => setPromotionalPrice(e.target.value)}
-                placeholder="0,00"
-                inputMode="decimal"
-              />
-            </div>
-          </div>
+              {images.length === 0 ? (
+                <label
+                  htmlFor="productImages"
+                  className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-surface px-4 py-8 text-center transition-colors hover:border-primary-container/50 hover:bg-surface-container-low"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed/50 text-primary-container">
+                    <ImagePlus size={20} aria-hidden="true" />
+                  </span>
+                  <span className="text-body-md text-on-surface">
+                    <span className="font-semibold text-primary">Clique para enviar</span> até {MAX_IMAGES} imagens
+                  </span>
+                  <span className="text-body-sm text-outline">JPG, PNG ou WEBP. A primeira vira a capa.</span>
+                </label>
+              ) : (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-2.5">
+                  {images.map((img, index) => (
+                    <div
+                      key={img.key}
+                      className={`group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-100 ${
+                        index === 0 && !img.uploading ? "ring-2 ring-primary-container ring-offset-2" : ""
+                      }`}
+                    >
+                      {img.uploading ? (
+                        <LoaderCircle size={20} aria-label="Enviando imagem" className="animate-spin text-primary-container" />
+                      ) : (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.url} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover" />
 
-          <div className={styles.checkboxRow}>
-            <label className={styles.checkboxLabel}>
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-              Ativo na vitrine
-            </label>
-            <label className={styles.checkboxLabel}>
-              <input type="checkbox" checked={isFeatured} onChange={(e) => setIsFeatured(e.target.checked)} />
-              Produto em destaque
-            </label>
-          </div>
+                          {index === 0 ? (
+                            <span className="absolute bottom-1 left-1 rounded-full bg-primary-container px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              Capa
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => makeCover(img.key)}
+                              aria-label="Usar como capa"
+                              title="Usar como capa"
+                              className="absolute bottom-1 left-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/65 text-white transition-colors hover:bg-primary-container"
+                            >
+                              <Star size={12} aria-hidden="true" />
+                            </button>
+                          )}
 
-          <label htmlFor="productImages">Imagens</label>
-          <input id="productImages" type="file" accept="image/*" multiple onChange={handleImagesSelected} />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(img.key)}
+                            aria-label="Remover imagem"
+                            title="Remover"
+                            className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/65 text-white transition-colors hover:bg-red-600"
+                          >
+                            <Trash2 size={13} aria-hidden="true" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
 
-          {images.length > 0 && (
-            <div className={styles.imageGrid}>
-              {images.map((img, index) => (
-                <div key={index} className={styles.imageThumb}>
-                  {img.uploading ? (
-                    <span className={styles.imageUploading}>Enviando...</span>
-                  ) : (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.url} alt={`Imagem ${index + 1}`} />
-                      {index === 0 && <span className={styles.coverBadge}>Capa</span>}
-                      <button
-                        type="button"
-                        className={styles.removeImageButton}
-                        onClick={() => removeImage(index)}
-                        aria-label="Remover imagem"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </>
+                  {canAddImages && (
+                    <label
+                      htmlFor="productImages"
+                      title="Adicionar imagens"
+                      className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-outline transition-colors hover:border-primary-container/50 hover:bg-surface-container-low hover:text-primary-container"
+                    >
+                      <Plus size={20} aria-hidden="true" />
+                      <span className="text-[11px] font-semibold">Adicionar</span>
+                    </label>
                   )}
                 </div>
-              ))}
+              )}
+            </Section>
+          </div>
+
+          {/* Rodapé fixo */}
+          <div className="flex flex-col gap-3 border-t border-slate-100 bg-white px-6 py-4">
+            {error && <ErrorBox>{error}</ErrorBox>}
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={onClose} disabled={loading} className={btnSecondary}>
+                Cancelar
+              </button>
+              <button type="submit" disabled={loading || isUploading} className={btnPrimary}>
+                {loading ? (
+                  <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
+                ) : isEdit ? (
+                  <Save size={16} aria-hidden="true" />
+                ) : (
+                  <Plus size={16} aria-hidden="true" />
+                )}
+                {loading ? "Salvando..." : isUploading ? "Enviando imagens..." : isEdit ? "Salvar alterações" : "Criar produto"}
+              </button>
             </div>
-          )}
-
-          {error && <p className={styles.modalError}>{error}</p>}
-
-          <div className={styles.modalActions}>
-            <button type="button" className={styles.cancelButton} onClick={onClose} disabled={loading}>
-              Cancelar
-            </button>
-            <button type="submit" className={styles.submitButton} disabled={loading}>
-              {loading ? "Criando..." : "Criar produto"}
-            </button>
           </div>
         </form>
       </div>
     </div>
+  );
+}
+
+/* ===========================
+   PEÇAS DO FORMULÁRIO
+=========================== */
+
+function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-label-sm font-bold tracking-wider text-outline uppercase">{title}</h3>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({
+  id,
+  label: fieldLabel,
+  hint: fieldHint,
+  required,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className={label}>
+        {fieldLabel}
+        {required && <span className="ml-0.5 text-red-600">*</span>}
+      </label>
+      {children}
+      {fieldHint && <span className={hint}>{fieldHint}</span>}
+    </div>
+  );
+}
+
+function MoneyInput({
+  id,
+  value,
+  onChange,
+  required,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-md text-outline">
+        R$
+      </span>
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0,00"
+        inputMode="decimal"
+        required={required}
+        className={`${input} pl-9 tabular-nums`}
+      />
+    </div>
+  );
+}
+
+function Toggle({
+  id,
+  icon,
+  label: toggleLabel,
+  description,
+  checked,
+  onChange,
+}: {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-center gap-3 px-4 py-3">
+      <span
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+          checked ? "bg-primary-container/10 text-primary-container" : "bg-slate-100 text-outline"
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-body-md font-semibold text-on-surface">{toggleLabel}</span>
+        <span className="block text-body-sm text-on-surface-variant">{description}</span>
+      </span>
+
+      {/* Switch: checkbox real escondido + trilho desenhado */}
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className="relative h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-container peer-focus-visible:ring-[3px] peer-focus-visible:ring-primary-container/25 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5"
+      />
+    </label>
   );
 }

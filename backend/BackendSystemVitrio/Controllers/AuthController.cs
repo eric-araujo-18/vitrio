@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Extensions;
 using BackendSystemVitrio.Services.AuthService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -75,8 +75,7 @@ namespace BackendSystemVitrio.Controllers
         [Authorize]
         public async Task<IActionResult> Me()
         {
-            var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var user = await _authService.GetByIdAsync(int.Parse(idClaim!));
+            var user = await _authService.GetByIdAsync(User.GetUserId());
 
             if (user is null)
                 return NotFound(Response<string>.Fail("Usuário não encontrado."));

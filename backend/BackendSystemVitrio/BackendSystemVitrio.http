@@ -1,6 +1,15 @@
-@BackendSystemVitrio_HostAddress = http://localhost:5020
+@host = http://localhost:5020
 
-GET {{BackendSystemVitrio_HostAddress}}/weatherforecast/
+### Vitrine pública (sem login)
+GET {{host}}/api/Public/stores/minha-loja
 Accept: application/json
 
 ###
+GET {{host}}/api/Public/stores/minha-loja/products?search=camisa
+Accept: application/json
+
+### Login (o access token vem em "dados")
+POST {{host}}/api/Auth/login
+Content-Type: application/json
+
+{ "cpf": "000.000.000-00", "password": "123456" }

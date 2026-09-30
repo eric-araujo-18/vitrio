@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "components/InitialPage/Storelist"  ],
   "exclude": ["node_modules"]
 }

@@ -57,9 +57,100 @@ namespace BackendSystemVitrio.Migrations
 
                     b.HasIndex("ParentCategoryId");
 
-                    b.HasIndex("StoreId");
+                    b.HasIndex("StoreId", "Slug")
+                        .IsUnique()
+                        .HasFilter("\"DeletionDate\" IS NULL");
 
                     b.ToTable("Category");
+                });
+
+            modelBuilder.Entity("BackendSystemVitrio.Models.Order", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CustomerEmail")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CustomerPhone")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoreId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTime?>("UpdatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("StoreId", "CreationDate");
+
+                    b.ToTable("Order");
+                });
+
+            modelBuilder.Entity("BackendSystemVitrio.Models.OrderItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("OrderItem");
                 });
 
             modelBuilder.Entity("BackendSystemVitrio.Models.Product", b =>
@@ -93,10 +184,12 @@ namespace BackendSystemVitrio.Migrations
                         .HasColumnType("text");
 
                     b.Property<decimal>("Price")
-                        .HasColumnType("numeric");
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<decimal?>("PromotionalPrice")
-                        .HasColumnType("numeric");
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<string>("Sku")
                         .HasColumnType("text");
@@ -118,7 +211,9 @@ namespace BackendSystemVitrio.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("StoreId");
+                    b.HasIndex("StoreId", "Slug")
+                        .IsUnique()
+                        .HasFilter("\"DeletionDate\" IS NULL");
 
                     b.ToTable("Product");
                 });
@@ -215,6 +310,9 @@ namespace BackendSystemVitrio.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Phone")
+                        .HasColumnType("text");
+
                     b.Property<string>("PrimaryColor")
                         .IsRequired()
                         .HasColumnType("text");
@@ -305,7 +403,8 @@ namespace BackendSystemVitrio.Migrations
                 {
                     b.HasOne("BackendSystemVitrio.Models.Category", "ParentCategory")
                         .WithMany("SubCategories")
-                        .HasForeignKey("ParentCategoryId");
+                        .HasForeignKey("ParentCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("BackendSystemVitrio.Models.Store", "Store")
                         .WithMany()
@@ -318,11 +417,41 @@ namespace BackendSystemVitrio.Migrations
                     b.Navigation("Store");
                 });
 
+            modelBuilder.Entity("BackendSystemVitrio.Models.Order", b =>
+                {
+                    b.HasOne("BackendSystemVitrio.Models.Store", "Store")
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
+            modelBuilder.Entity("BackendSystemVitrio.Models.OrderItem", b =>
+                {
+                    b.HasOne("BackendSystemVitrio.Models.Order", "Order")
+                        .WithMany("Items")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BackendSystemVitrio.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("BackendSystemVitrio.Models.Product", b =>
                 {
                     b.HasOne("BackendSystemVitrio.Models.Category", "Category")
                         .WithMany("Products")
-                        .HasForeignKey("CategoryId");
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("BackendSystemVitrio.Models.Store", "Store")
                         .WithMany()
@@ -373,6 +502,11 @@ namespace BackendSystemVitrio.Migrations
                     b.Navigation("Products");
 
                     b.Navigation("SubCategories");
+                });
+
+            modelBuilder.Entity("BackendSystemVitrio.Models.Order", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("BackendSystemVitrio.Models.Product", b =>

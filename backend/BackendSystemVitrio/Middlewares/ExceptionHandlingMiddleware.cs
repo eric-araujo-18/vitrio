@@ -1,4 +1,3 @@
-// Middlewares/ExceptionHandlingMiddleware.cs
 using System.Net;
 using BackendSystemVitrio.Wrappers;
 
@@ -21,16 +20,25 @@ namespace BackendSystemVitrio.Middlewares
             {
                 await _next(context);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Acesso não autorizado");
+                await WriteAsync(context, HttpStatusCode.Unauthorized, "Sessão inválida. Faça login novamente.");
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro não tratado");
-
-                context.Response.ContentType = "application/json";
-                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-
-                var response = Response<string>.Fail("Ocorreu um erro interno. Tente novamente mais tarde.");
-                await context.Response.WriteAsJsonAsync(response);
+                await WriteAsync(context, HttpStatusCode.InternalServerError, "Ocorreu um erro interno. Tente novamente mais tarde.");
             }
+        }
+
+        private static async Task WriteAsync(HttpContext context, HttpStatusCode status, string message)
+        {
+            if (context.Response.HasStarted) return;
+
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = (int)status;
+            await context.Response.WriteAsJsonAsync(Response<string>.Fail(message));
         }
     }
 }

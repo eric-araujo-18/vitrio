@@ -9,6 +9,7 @@ export interface Category {
   slug: string;
   parentCategoryId: number | null;
   isActive: boolean;
+  productCount: number;
 }
 
 export interface CreateCategoryPayload {
@@ -18,10 +19,26 @@ export interface CreateCategoryPayload {
   parentCategoryId?: number;
 }
 
+export interface UpdateCategoryPayload {
+  name?: string;
+  slug?: string;
+  parentCategoryId?: number;
+  removeParent?: boolean;
+  isActive?: boolean;
+}
+
 export function getCategoriesByStore(storeId: number) {
-  return request<Category[]>(`/api/Category/${storeId}`, "GET", undefined, true);
+  return request<Category[]>(`/api/Category/store/${storeId}`, "GET", undefined, true);
 }
 
 export function createCategory(payload: CreateCategoryPayload) {
-  return request<string>("/api/Category", "POST", payload, true);
+  return request<Category>("/api/Category", "POST", payload, true);
+}
+
+export function updateCategory(id: number, payload: UpdateCategoryPayload) {
+  return request<Category>(`/api/Category/${id}`, "PUT", payload, true);
+}
+
+export function deleteCategory(id: number) {
+  return request<string>(`/api/Category/${id}`, "DELETE", undefined, true);
 }

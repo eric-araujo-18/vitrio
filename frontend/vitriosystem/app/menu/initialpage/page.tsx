@@ -1,66 +1,82 @@
 "use client";
 
-import styles from "./Initialpage.module.css";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ChevronRight, Plus } from "lucide-react";
+import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
+import { getMyStores, unwrap, type Store } from "@/lib/api";
+import {
+  StoreCard,
+  StoresEmpty,
+  StoresLoading,
+  StoresPanel,
+  primaryButtonClass,
+} from "@/components/InitialPage/Storelist/StoreCard";
 
-import SidebarInitialPage from "@/components/InitialPage/Sidebar/SidebarInitialPage";
-import Header from "@/components/InitialPage/Header/Header";
-import { useRequireAuth } from "@/lib/auth_context";
+export default function InitialPage() {
+  return (
+    <DashboardShell>
+      {(user) => (
+        <>
+          <div className="mb-9">
+            <h1 className="mb-2 text-display-lg-mobile text-on-surface md:text-display-lg">
+              Bem-vindo, {user.name.split(" ")[0]} 👋
+            </h1>
+            <p className="text-body-lg text-on-surface-variant">
+              Gerencie sua conta e todas as suas lojas em um único lugar.
+            </p>
+          </div>
 
-export default function Initial() {
-    const { user, loading } = useRequireAuth();
+          <StoresOverview />
+        </>
+      )}
+    </DashboardShell>
+  );
+}
 
-    // Enquanto verifica o token / busca o usuário, evita "piscar" a
-    // dashboard antes de saber se a pessoa está mesmo logada.
-    if (loading) {
-        return (
-            <div className={styles.dashboard}>
-                <p style={{ padding: 40 }}>Carregando...</p>
-            </div>
-        );
-    }
+function StoresOverview() {
+  const [stores, setStores] = useState<Store[] | null>(null);
 
-    // useRequireAuth já disparou o redirect pro /login; não renderiza nada
-    // nesse frame pra não mostrar a dashboard vazia por um instante.
-    if (!user) {
-        return null;
-    }
+  useEffect(() => {
+    unwrap(getMyStores())
+      .then(setStores)
+      .catch(() => setStores([]));
+  }, []);
 
-    const firstName = user.name.split(" ")[0];
+  const isEmpty = stores !== null && stores.length === 0;
 
-    return (
-        <div className={styles.dashboard}>
+  return (
+    <StoresPanel
+      title={stores === null ? "Suas lojas" : `Suas lojas (${stores.length})`}
+      action={
+        stores !== null && (
+          <Link href="/menu/stores" className={`${primaryButtonClass} w-full sm:w-auto`}>
+            {isEmpty ? (
+              <>
+                <Plus size={18} aria-hidden="true" />
+                Criar loja
+              </>
+            ) : (
+              <>
+                Ver todas
+                <ChevronRight
+                  size={18}
+                  aria-hidden="true"
+                  className="transition-transform duration-200 group-hover/btn:translate-x-1"
+                />
+              </>
+            )}
+          </Link>
+        )
+      }
+    >
+      {stores === null && <StoresLoading />}
 
-            <SidebarInitialPage />
+      {isEmpty && (
+        <StoresEmpty>Você ainda não tem lojas. Crie a primeira para montar sua vitrine.</StoresEmpty>
+      )}
 
-            {/* MAIN */}
-
-            <main className={styles.content}>
-
-                <Header />
-
-                {/* BODY */}
-
-                <section className={styles.body}>
-
-                    <div className={styles.welcome}>
-
-                        <h1>
-                            Bem-vindo, {firstName} 👋
-                        </h1>
-
-                        <p>
-                            Gerencie sua conta e todas as suas lojas em um único lugar.
-                        </p>
-
-                    </div>
-
-                    
-
-
-                </section>
-
-            </main>
-
-        </div>
-    );
+      {stores?.slice(0, 3).map((store) => <StoreCard key={store.id} store={store} />)}
+    </StoresPanel>
+  );
 }

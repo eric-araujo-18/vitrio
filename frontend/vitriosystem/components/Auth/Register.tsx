@@ -3,10 +3,12 @@
 import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { register, SHOPKEEPER_ROLE } from "@/lib/api";
+import { IdCard, Lock, Mail, Phone, User, UserPlus } from "lucide-react";
+import { register } from "@/lib/api";
 import { formatCpf, isValidCpf, formatPhone, isValidPhone } from "@/lib/validators";
-import styles from "./Auth.module.css";
 import { useGuestOnly } from "@/lib/auth_context";
+import { AuthLayout } from "../Auth/components/AuthLayout";
+import { AuthError, AuthInput, AuthSubmit } from "../Auth/components/AuthFields";
 
 export default function Register() {
   const router = useRouter();
@@ -23,6 +25,16 @@ export default function Register() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!name.trim()) {
+      setError("Informe seu nome.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("A senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
 
     if (!cpf.trim()) {
       setError("Informe o CPF");
@@ -46,7 +58,6 @@ export default function Register() {
         name,
         email,
         password,
-        role: SHOPKEEPER_ROLE,
         phone: phone || undefined,
         cpf: cpf.trim(), // já validado acima e agora é obrigatório na API
       });
@@ -75,71 +86,88 @@ export default function Register() {
   if (guestOnlyLoading) return null;
 
   return (
-    <div className={styles.authPage}>
-      <div className={styles.authCard}>
-        <Link href="/" className={styles.authLogo}>
-          <h2>Vitrio System</h2>
-        </Link>
+    <AuthLayout
+      title="Criar sua conta"
+      subtitle="Cadastre-se para começar a usar o Vitrio System."
+      footer={
+        <>
+          Já tem uma conta?{" "}
+          <Link href="/auth/login" className="font-semibold text-primary hover:underline">
+            Entrar
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <AuthInput
+          id="name"
+          label="Seu nome"
+          icon={User}
+          autoComplete="name"
+          placeholder="Como devemos te chamar?"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
 
-        <h1>Criar sua Conta</h1>
-        <p className={styles.authSubtitle}>
-          Cadastre-se para começar a usar o Vitrio System.
-        </p>
+        <AuthInput
+          id="email"
+          label="E-mail"
+          icon={Mail}
+          type="email"
+          autoComplete="email"
+          placeholder="voce@exemplo.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-        <form onSubmit={handleSubmit} className={styles.authForm} noValidate>
-          <label htmlFor="name">Seu nome</label>
-          <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+        <AuthInput
+          id="password"
+          label="Senha"
+          icon={Lock}
+          type="password"
+          autoComplete="new-password"
+          placeholder="Mínimo de 6 caracteres"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={6}
+        />
 
-          <label htmlFor="email">E-mail</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+        <AuthInput
+          id="phone"
+          label="Telefone"
+          hint="(opcional)"
+          icon={Phone}
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel"
+          placeholder="(00) 00000-0000"
+          value={phone}
+          onChange={(e) => setPhone(formatPhone(e.target.value))}
+          maxLength={15}
+        />
 
-          <label htmlFor="password">Senha</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
+        <AuthInput
+          id="cpf"
+          label="CPF"
+          icon={IdCard}
+          inputMode="numeric"
+          placeholder="000.000.000-00"
+          value={cpf}
+          onChange={(e) => setCpf(formatCpf(e.target.value))}
+          maxLength={14}
+          required
+        />
 
-          <label htmlFor="phone">Telefone</label>
-          <input
-            id="phone"
-            value={phone}
-            onChange={(e) => setPhone(formatPhone(e.target.value))}
-            placeholder="(00) 00000-0000"
-            inputMode="numeric"
-            maxLength={15}
-          />
+        {error && <AuthError>{error}</AuthError>}
 
-          <label htmlFor="cpf">CPF</label>
-          <input
-            id="cpf"
-            value={cpf}
-            onChange={(e) => setCpf(formatCpf(e.target.value))}
-            placeholder="123.456.789-00"
-            inputMode="numeric"
-            maxLength={14}
-          />
-
-          {error && <p className={styles.authError}>{error}</p>}
-
-          <button type="submit" className={styles.btnPrimary} disabled={loading}>
-            {loading ? "Criando..." : "Criar conta"}
-          </button>
-        </form>
-
-        <p className={styles.authSwitch}>
-          Já tem uma conta? <Link href="/auth/login">Entrar</Link>
-        </p>
-      </div>
-    </div>
+        <AuthSubmit loading={loading} loadingText="Criando...">
+          <UserPlus size={18} aria-hidden="true" />
+          Criar conta
+        </AuthSubmit>
+      </form>
+    </AuthLayout>
   );
 }

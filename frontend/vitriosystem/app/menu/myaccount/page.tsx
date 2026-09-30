@@ -1,65 +1,36 @@
 "use client";
 
-import styles from "./MyAccount.module.css";
-
-import SidebarInitialPage from "@/components/InitialPage/Sidebar/SidebarInitialPage";
-import Header from "@/components/InitialPage/Header/Header";
-import { useRequireAuth } from "@/lib/auth_context";
+import { LogOut } from "lucide-react";
+import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
 import EditProfileForm from "@/components/InitialPage/ProfileEdit/Editprofileform";
+import { useAuth } from "@/lib/auth_context";
+import { formatPhone } from "@/lib/validators";
 
-export default function Initial() {
-    const { user, loading } = useRequireAuth();
+export default function MyAccountPage() {
+  const { reloadUser, logout } = useAuth();
 
-    // Enquanto verifica o token / busca o usuário, evita "piscar" a
-    // dashboard antes de saber se a pessoa está mesmo logada.
-    if (loading) {
-        return (
-            <div className={styles.dashboard}>
-                <p style={{ padding: 40 }}>Carregando...</p>
-            </div>
-        );
-    }
+  return (
+    <DashboardShell title="Minha conta ✍️" subtitle="Edite suas informações de contato.">
+      {(user) => (
+        <div className="flex max-w-2xl flex-col gap-6">
+          <EditProfileForm
+            // Antes o formulário abria vazio; agora vem preenchido com os dados atuais.
+            initialData={{ name: user.name, email: user.email, phone: formatPhone(user.phone ?? "") }}
+            onUpdated={reloadUser}
+          />
 
-    // useRequireAuth já disparou o redirect pro /login; não renderiza nada
-    // nesse frame pra não mostrar a dashboard vazia por um instante.
-    if (!user) {
-        return null;
-    }
-
-    const firstName = user.name.split(" ")[0];
-
-    return (
-        <div className={styles.dashboard}>
-
-            <SidebarInitialPage />
-
-            {/* MAIN */}
-
-            <main className={styles.content}>
-
-                <Header />
-
-                {/* BODY */}
-
-                <section className={styles.body}>
-
-                    <div className={styles.welcome}>
-
-                        <h1>
-                            Edite seus dados, {firstName} ✍️
-                        </h1>
-
-                        <p>
-                            Edite suas informações de conta e gerencie suas lojas.
-                        </p>
-
-                    </div>
-
-                    <EditProfileForm />
-                </section>
-
-            </main>
-
+          {/* No celular a sidebar vira barra embaixo e não tem botão de sair,
+              então ele aparece aqui só nessa largura. */}
+          <button
+            type="button"
+            onClick={logout}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white text-title-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 min-[577px]:hidden"
+          >
+            <LogOut size={18} aria-hidden="true" />
+            Sair da conta
+          </button>
         </div>
-    );
+      )}
+    </DashboardShell>
+  );
 }

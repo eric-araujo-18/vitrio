@@ -1,71 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
+import type { CSSProperties } from "react";
 import {
+  ArrowLeft,
+  ExternalLink,
   LayoutDashboard,
+  LogOut,
   Package,
-  ShoppingCart,
   Palette,
   Settings,
+  ShoppingCart,
   Store as StoreIcon,
-  ExternalLink,
-  LogOut,
+  Tags,
+  type LucideIcon,
 } from "lucide-react";
-import { getMyStores, type Store } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
-import styles from "./SidebarShopkeeper.module.css";
+import { useShopkeeperStore } from "../ShopkeeperStoreContext";
+import { StatusBadge } from "../Ui";
 
 interface NavItem {
   label: string;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: LucideIcon;
   /** true = precisa ser rota exata; false = também ativa em sub-rotas */
   exact?: boolean;
 }
 
+/*
+  Até 900px vira um trilho só de ícones (64px); acima disso, 240px com texto.
+  A cor de destaque acompanha a cor da loja via --sb-accent / --sb-accent-dark.
+*/
+
+const footerLinkClass =
+  "flex w-full items-center justify-center gap-2.5 rounded-lg p-2.5 text-left text-body-md font-medium text-on-surface-variant transition-colors hover:bg-slate-100 hover:text-on-surface min-[901px]:justify-start min-[901px]:px-2.5 min-[901px]:py-2";
 
 export default function SidebarShopkeeper() {
   const pathname = usePathname();
-  const params = useParams<{ slug: string }>();
-  const slug = params?.slug ?? "";
   const { logout } = useAuth();
+  // A loja vem do layout (já validada como sendo do usuário logado),
+  // então a sidebar não precisa buscar nada sozinha.
+  const { store } = useShopkeeperStore();
 
-  const [store, setStore] = useState<Store | null>(null);
-  const [loadingStore, setLoadingStore] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadStore() {
-      setLoadingStore(true);
-      try {
-        // getMyStores() retorna só as lojas do usuário logado — então,
-        // de quebra, se o slug da URL não bater com nenhuma delas
-        // (ex: shopkeeper tentando acessar loja de outro dono), `found`
-        // fica null e o sidebar não expõe dados/cores daquela loja.
-        const { dados } = await getMyStores();
-        if (!active) return;
-        setStore(dados?.find((s) => s.slug === slug) ?? null);
-      } catch {
-        if (active) setStore(null);
-      } finally {
-        if (active) setLoadingStore(false);
-      }
-    }
-
-    if (slug) loadStore();
-    return () => {
-      active = false;
-    };
-  }, [slug]);
-
-  const basePath = `/store/${slug}/shopkeeper`;
+  const basePath = `/store/${store.slug}/shopkeeper`;
 
   const navItems: NavItem[] = [
     { label: "Início", href: basePath, icon: LayoutDashboard, exact: true },
     { label: "Produtos", href: `${basePath}/products`, icon: Package },
+    { label: "Categorias", href: `${basePath}/categories`, icon: Tags },
     { label: "Pedidos", href: `${basePath}/pedidos`, icon: ShoppingCart },
     { label: "Personalização", href: `${basePath}/personalizacao`, icon: Palette },
     { label: "Configurações", href: `${basePath}/configuracoes`, icon: Settings },
@@ -76,38 +59,46 @@ export default function SidebarShopkeeper() {
     return item.exact ? pathname === item.href : pathname.startsWith(item.href);
   };
 
+  const accentVars = {
+    "--sb-accent": store.primaryColor || "#2563eb",
+    "--sb-accent-dark": store.secondaryColor || "#1d4ed8",
+  } as CSSProperties;
 
   return (
-    <aside className={styles.sidebar} >
-      <div className={styles.header}>
-        <div className={styles.logoBadge} aria-hidden="true">
-          {store?.logoUrl ? (
+    <aside
+      style={accentVars}
+      className="sticky top-0 flex h-screen w-16 shrink-0 flex-col border-r border-slate-200/85 bg-white text-on-surface min-[901px]:w-60"
+    >
+      {/* Cabeçalho com a loja */}
+      <div className="flex items-center justify-center gap-2.5 border-b border-slate-200/85 py-4 min-[901px]:justify-start min-[901px]:px-4 min-[901px]:py-5">
+        <div
+          aria-hidden="true"
+          title={store.name}
+          className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--sb-accent)] text-white"
+        >
+          {store.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={store.logoUrl} alt="" className={styles.logoImg} />
+            <img src={store.logoUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             <StoreIcon size={18} strokeWidth={2.25} />
           )}
         </div>
-        <div className={styles.storeInfo}>
-          <span className={styles.storeName}>
-            {loadingStore ? "Carregando..." : store?.name || slug}
-          </span>
-          {store && (
-            <span
-              className={`${styles.statusPill} ${
-                store.isActive ? styles.statusActive : styles.statusPaused
-              }`}
-            >
-              <span className={styles.statusDot} aria-hidden="true" />
-              {store.isActive ? "Ativa" : "Pausada"}
-            </span>
-          )}
+
+        <div className="hidden min-w-0 flex-col gap-1 min-[901px]:flex">
+          <span className="truncate text-body-md leading-tight font-semibold">{store.name}</span>
+          <StatusBadge status={store.isActive ? "Active" : "Pending"}>
+            {store.isActive ? "Ativa" : "Pausada"}
+          </StatusBadge>
         </div>
       </div>
 
-      <nav className={styles.nav}>
-        <span className={styles.navEyebrow}>Gerenciar</span>
-        <ul className={styles.navList}>
+      {/* Navegação */}
+      <nav aria-label="Menu da loja" className="flex-1 overflow-y-auto px-3 pt-4 pb-2">
+        <span className="hidden px-2 pb-2.5 text-label-sm font-bold tracking-wider text-on-surface-variant uppercase min-[901px]:block">
+          Gerenciar
+        </span>
+
+        <ul className="flex flex-col gap-1">
           {navItems.map((item) => {
             const active = isItemActive(item);
             const Icon = item.icon;
@@ -115,11 +106,17 @@ export default function SidebarShopkeeper() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`${styles.navLink} ${active ? styles.navLinkActive : ""}`}
                   aria-current={active ? "page" : undefined}
+                  aria-label={item.label}
+                  title={item.label}
+                  className={`relative flex items-center justify-center gap-2.5 rounded-lg p-2.5 text-body-md transition-colors min-[901px]:justify-start min-[901px]:px-3 min-[901px]:py-2 ${
+                    active
+                      ? "bg-[color-mix(in_srgb,var(--sb-accent)_12%,white)] font-semibold text-[var(--sb-accent-dark)] before:absolute before:top-1/2 before:-left-3 before:h-3/5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-[var(--sb-accent)]"
+                      : "font-medium text-on-surface-variant hover:bg-slate-100 hover:text-on-surface"
+                  }`}
                 >
-                  <Icon size={22} strokeWidth={2} className={styles.navIcon} />
-                  <span>{item.label}</span>
+                  <Icon size={20} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+                  <span className="hidden min-[901px]:inline">{item.label}</span>
                 </Link>
               </li>
             );
@@ -127,19 +124,32 @@ export default function SidebarShopkeeper() {
         </ul>
       </nav>
 
-      <div className={styles.footer}>
+      {/* Rodapé */}
+      <div className="flex flex-col gap-0.5 border-t border-slate-200/85 p-3">
         <Link
-          href={`/store/${slug}`}
+          href={`/store/${store.slug}`}
           target="_blank"
           rel="noopener noreferrer"
-          className={styles.footerLink}
+          aria-label="Ver vitrine"
+          title="Ver vitrine"
+          className={footerLinkClass}
         >
-          <ExternalLink size={17} strokeWidth={2} className={styles.navIcon} />
-          <span>Ver vitrine</span>
+          <ExternalLink size={17} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+          <span className="hidden min-[901px]:inline">Ver vitrine</span>
         </Link>
-        <button type="button" onClick={logout} className={styles.footerLink}>
-          <LogOut size={17} strokeWidth={2} className={styles.navIcon} />
-          <span>Sair</span>
+        <Link href="/menu/stores" aria-label="Minhas lojas" title="Minhas lojas" className={footerLinkClass}>
+          <ArrowLeft size={17} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+          <span className="hidden min-[901px]:inline">Minhas lojas</span>
+        </Link>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sair"
+          title="Sair"
+          className={`${footerLinkClass} hover:bg-red-50! hover:text-red-600!`}
+        >
+          <LogOut size={17} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+          <span className="hidden min-[901px]:inline">Sair</span>
         </button>
       </div>
     </aside>

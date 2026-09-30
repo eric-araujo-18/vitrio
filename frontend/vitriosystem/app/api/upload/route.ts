@@ -8,53 +8,71 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// URL do backend vista pelo servidor do Next (pode ser diferente da pública em produção).
+const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5020";
+
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+function fail(mensagem: string, status: number) {
+  return NextResponse.json({ dados: null, mensagem, status: false }, { status });
+}
+
+// Antes a rota só checava se o header começava com "Bearer " — qualquer um
+// mandando "Bearer abc" conseguia subir arquivos na sua conta do Cloudinary.
+// Agora o token é validado de verdade no backend (que conhece a chave do JWT).
+async function isAuthenticated(authHeader: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/Auth/me`, {
+      headers: { Authorization: authHeader },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data?.status === true && ["Shopkeeper", "Admin"].includes(data?.dados?.role);
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // 1. Autenticação — primeira coisa a checar, antes de ler o arquivo
+    // 1. Autenticação — antes de ler o arquivo
     const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { dados: null, mensagem: "Não autenticado.", status: false },
-        { status: 401 }
-      );
+    if (!authHeader?.startsWith("Bearer ") || !(await isAuthenticated(authHeader))) {
+      return fail("Não autenticado.", 401);
+    }
+
+    // 2. Barra arquivos grandes antes de carregar o corpo inteiro na memória
+    const contentLength = Number(req.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_SIZE + 1024 * 64) {
+      return fail("Imagem muito grande (máx. 5MB).", 413);
     }
 
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const file = formData.get("file");
 
-    if (!file) {
-      return NextResponse.json(
-        { dados: null, mensagem: "Nenhum arquivo enviado.", status: false },
-        { status: 400 }
-      );
+    if (!(file instanceof File)) {
+      return fail("Nenhum arquivo enviado.", 400);
     }
 
-    // 2. Tipo de arquivo
+    // 3. Tipo de arquivo
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { dados: null, mensagem: "Formato de imagem inválido.", status: false },
-        { status: 400 }
-      );
+      return fail("Formato de imagem inválido. Use JPG, PNG ou WEBP.", 400);
     }
 
-    // 3. Tamanho
+    // 4. Tamanho
     if (file.size > MAX_SIZE) {
-      return NextResponse.json(
-        { dados: null, mensagem: "Imagem muito grande (máx. 5MB).", status: false },
-        { status: 400 }
-      );
+      return fail("Imagem muito grande (máx. 5MB).", 400);
     }
 
-    // 4. Só chega aqui se passou em tudo — agora sim faz upload
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    // 5. Upload
+    const buffer = Buffer.from(await file.arrayBuffer());
     const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
     const uploadResult = await cloudinary.uploader.upload(base64, {
       folder: "vitrio",
+      resource_type: "image", // Cloudinary rejeita o que não for imagem de verdade
     });
 
     return NextResponse.json({
@@ -64,9 +82,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error(error);
-    return NextResponse.json(
-      { dados: null, mensagem: "Erro ao enviar a imagem.", status: false },
-      { status: 500 }
-    );
+    return fail("Erro ao enviar a imagem.", 500);
   }
 }
