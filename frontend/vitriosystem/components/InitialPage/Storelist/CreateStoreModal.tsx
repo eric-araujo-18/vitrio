@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import {
   Building2,
   CircleAlert,
+  Eye,
   ImagePlus,
   LoaderCircle,
   Plus,
@@ -14,6 +15,7 @@ import {
 import { createStore, unwrap, type Store, type CreateStorePayload } from "@/lib/api";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
 import { uploadImage } from "@/lib/upload";
+import StorePreview from "../StorePreview/StorePreview";
 import { primaryButtonClass } from "./StoreCard";
 
 interface CreateStoreModalProps {
@@ -93,6 +95,16 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const busy = loading || uploading;
+
+  // Mesmas props nas duas posições da prévia (lateral no desktop, abaixo das cores no celular).
+  const previewProps = {
+    name,
+    description,
+    logoUrl,
+    primaryColor,
+    secondaryColor,
+    tertiaryColor,
+  };
 
   // Não deixa fechar no meio de um envio (evita perder o que está sendo salvo).
   function handleClose() {
@@ -187,7 +199,7 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-store-title"
-        className="max-h-[90vh] w-full max-w-[520px] animate-modal-in overflow-y-auto rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:p-8"
+        className="max-h-[90vh] w-full max-w-[520px] animate-modal-in overflow-y-auto rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:p-8 md:max-w-[880px]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho */}
@@ -216,208 +228,232 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
           Preencha os dados abaixo para criar sua loja. Você pode ajustar tudo isso depois.
         </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-          {/* Nome */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="storeName" className={labelClass}>
-              Nome da loja <span className="text-red-600">*</span>
-            </label>
-            <div className="group relative">
-              <StoreIcon
-                size={18}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-outline transition-colors group-focus-within:text-primary-container"
-              />
-              <input
-                id="storeName"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ex: Loja da Maria"
-                required
-                autoFocus
-                className={`${fieldClass} h-11 pl-10`}
-              />
-            </div>
-          </div>
-
-          {/* CNPJ */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="storeCnpj" className={labelClass}>
-              CNPJ <span className="font-normal text-outline">(opcional)</span>
-            </label>
-            <div className="group relative">
-              <Building2
-                size={18}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-outline transition-colors group-focus-within:text-primary-container"
-              />
-              <input
-                id="storeCnpj"
-                value={cnpj}
-                onChange={(e) => setCnpj(formatCnpj(e.target.value))}
-                placeholder="00.000.000/0000-00"
-                inputMode="numeric"
-                maxLength={18}
-                className={`${fieldClass} h-11 pl-10`}
-              />
-            </div>
-          </div>
-
-          {/* Descrição */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="storeDescription" className={labelClass}>
-              Descrição
-            </label>
-            <textarea
-              id="storeDescription"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Conte um pouco sobre sua loja"
-              rows={3}
-              className={`${fieldClass} resize-y py-2.5`}
-            />
-          </div>
-
-          {/* Logo */}
-          <div className="flex flex-col gap-1.5">
-            <span className={labelClass}>Logo da loja</span>
-
-            <input
-              ref={fileInputRef}
-              id="storeLogo"
-              type="file"
-              accept="image/*"
-              onChange={handleLogoChange}
-              disabled={uploading}
-              className="sr-only"
-            />
-
-            {logoUrl && !uploading ? (
-              <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-surface p-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={logoUrl}
-                  alt="Preview do logo"
-                  className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 bg-white object-contain"
+        <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-[minmax(0,1fr)_280px]">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+            {/* Nome */}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="storeName" className={labelClass}>
+                Nome da loja <span className="text-red-600">*</span>
+              </label>
+              <div className="group relative">
+                <StoreIcon
+                  size={18}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-outline transition-colors group-focus-within:text-primary-container"
                 />
-                <div className="flex flex-1 flex-wrap gap-2">
-                  <label
-                    htmlFor="storeLogo"
-                    className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-label-md text-on-surface transition-colors hover:border-slate-300 hover:bg-surface"
-                  >
-                    <ImagePlus size={16} aria-hidden="true" />
-                    Trocar
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleRemoveLogo}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-label-md text-red-700 transition-colors hover:bg-red-50"
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                    Remover
-                  </button>
-                </div>
+                <input
+                  id="storeName"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ex: Loja da Maria"
+                  required
+                  autoFocus
+                  className={`${fieldClass} h-11 pl-10`}
+                />
               </div>
-            ) : (
-              <label
-                htmlFor="storeLogo"
-                className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-surface px-4 py-6 text-center transition-colors ${
-                  uploading
-                    ? "cursor-wait"
-                    : "cursor-pointer hover:border-primary-container/50 hover:bg-surface-container-low"
-                }`}
+            </div>
+
+            {/* CNPJ */}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="storeCnpj" className={labelClass}>
+                CNPJ <span className="font-normal text-outline">(opcional)</span>
+              </label>
+              <div className="group relative">
+                <Building2
+                  size={18}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-outline transition-colors group-focus-within:text-primary-container"
+                />
+                <input
+                  id="storeCnpj"
+                  value={cnpj}
+                  onChange={(e) => setCnpj(formatCnpj(e.target.value))}
+                  placeholder="00.000.000/0000-00"
+                  inputMode="numeric"
+                  maxLength={18}
+                  className={`${fieldClass} h-11 pl-10`}
+                />
+              </div>
+            </div>
+
+            {/* Descrição */}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="storeDescription" className={labelClass}>
+                Descrição
+              </label>
+              <textarea
+                id="storeDescription"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Conte um pouco sobre sua loja"
+                rows={3}
+                className={`${fieldClass} resize-y py-2.5`}
+              />
+            </div>
+
+            {/* Logo */}
+            <div className="flex flex-col gap-1.5">
+              <span className={labelClass}>Logo da loja</span>
+
+              <input
+                ref={fileInputRef}
+                id="storeLogo"
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+                disabled={uploading}
+                className="sr-only"
+              />
+
+              {logoUrl && !uploading ? (
+                <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-surface p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoUrl}
+                    alt="Preview do logo"
+                    className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 bg-white object-contain"
+                  />
+                  <div className="flex flex-1 flex-wrap gap-2">
+                    <label
+                      htmlFor="storeLogo"
+                      className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-label-md text-on-surface transition-colors hover:border-slate-300 hover:bg-surface"
+                    >
+                      <ImagePlus size={16} aria-hidden="true" />
+                      Trocar
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleRemoveLogo}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-label-md text-red-700 transition-colors hover:bg-red-50"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  htmlFor="storeLogo"
+                  className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-surface px-4 py-6 text-center transition-colors ${
+                    uploading
+                      ? "cursor-wait"
+                      : "cursor-pointer hover:border-primary-container/50 hover:bg-surface-container-low"
+                  }`}
+                >
+                  {uploading ? (
+                    <>
+                      <LoaderCircle
+                        size={24}
+                        aria-hidden="true"
+                        className="animate-spin text-primary-container"
+                      />
+                      <span className="text-body-md text-on-surface-variant">Enviando imagem...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed/50 text-primary-container">
+                        <ImagePlus size={20} aria-hidden="true" />
+                      </span>
+                      <span className="text-body-md text-on-surface">
+                        <span className="font-semibold text-primary">Clique para enviar</span> uma
+                        imagem
+                      </span>
+                      <span className="text-body-sm text-outline">PNG, JPG ou SVG</span>
+                    </>
+                  )}
+                </label>
+              )}
+            </div>
+
+            {/* Cores */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <ColorField
+                id="primaryColor"
+                label="Cor primária"
+                hint="Botões e destaques"
+                value={primaryColor}
+                onChange={setPrimaryColor}
+              />
+              <ColorField
+                id="secondaryColor"
+                label="Cor secundária"
+                hint="Hover e detalhes"
+                value={secondaryColor}
+                onChange={setSecondaryColor}
+              />
+              <ColorField
+                id="tertiaryColor"
+                label="Cor terciária"
+                hint="Cabeçalho da vitrine"
+                value={tertiaryColor}
+                onChange={setTertiaryColor}
+              />
+            </div>
+
+            {/* Prévia no celular: logo abaixo das cores, onde o efeito é visto na hora */}
+            <div className="flex flex-col gap-2 md:hidden">
+              <PreviewLabel />
+              <StorePreview {...previewProps} />
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-body-md text-red-700"
               >
-                {uploading ? (
+                <CircleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Ações */}
+            <div className="mt-1 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={busy}
+                className={secondaryButtonClass}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={busy}
+                className={`${primaryButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                {loading ? (
                   <>
-                    <LoaderCircle
-                      size={24}
-                      aria-hidden="true"
-                      className="animate-spin text-primary-container"
-                    />
-                    <span className="text-body-md text-on-surface-variant">Enviando imagem...</span>
+                    <LoaderCircle size={18} aria-hidden="true" className="animate-spin" />
+                    Criando...
                   </>
                 ) : (
                   <>
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed/50 text-primary-container">
-                      <ImagePlus size={20} aria-hidden="true" />
-                    </span>
-                    <span className="text-body-md text-on-surface">
-                      <span className="font-semibold text-primary">Clique para enviar</span> uma
-                      imagem
-                    </span>
-                    <span className="text-body-sm text-outline">PNG, JPG ou SVG</span>
+                    <Plus size={18} aria-hidden="true" />
+                    Criar loja
                   </>
                 )}
-              </label>
-            )}
-          </div>
-
-          {/* Cores */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <ColorField
-              id="primaryColor"
-              label="Cor primária"
-              hint="Botões e destaques"
-              value={primaryColor}
-              onChange={setPrimaryColor}
-            />
-            <ColorField
-              id="secondaryColor"
-              label="Cor secundária"
-              hint="Hover e detalhes"
-              value={secondaryColor}
-              onChange={setSecondaryColor}
-            />
-            <ColorField
-              id="tertiaryColor"
-              label="Cor terciária"
-              hint="Cabeçalho da vitrine"
-              value={tertiaryColor}
-              onChange={setTertiaryColor}
-            />
-          </div>
-
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-body-md text-red-700"
-            >
-              <CircleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
-              <span>{error}</span>
+              </button>
             </div>
-          )}
+          </form>
 
-          {/* Ações */}
-          <div className="mt-1 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={busy}
-              className={secondaryButtonClass}
-            >
-              Cancelar
-            </button>
-
-            <button
-              type="submit"
-              disabled={busy}
-              className={`${primaryButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
-            >
-              {loading ? (
-                <>
-                  <LoaderCircle size={18} aria-hidden="true" className="animate-spin" />
-                  Criando...
-                </>
-              ) : (
-                <>
-                  <Plus size={18} aria-hidden="true" />
-                  Criar loja
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+          {/* Prévia no desktop: coluna lateral que acompanha a rolagem do modal */}
+          <aside className="sticky top-0 hidden flex-col gap-2 md:flex">
+            <PreviewLabel />
+            <StorePreview {...previewProps} />
+            <p className="text-body-sm text-outline">A vitrine atualiza enquanto você preenche os campos.</p>
+          </aside>
+        </div>
       </div>
     </div>
+  );
+}
+
+function PreviewLabel() {
+  return (
+    <span className="flex items-center gap-1.5 text-label-md font-semibold text-on-surface-variant">
+      <Eye size={15} aria-hidden="true" />
+      Pré-visualização
+    </span>
   );
 }
