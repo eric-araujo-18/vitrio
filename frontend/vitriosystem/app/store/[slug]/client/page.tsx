@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  Check,
   ImageOff,
+  Images,
   LayoutDashboard,
   LoaderCircle,
   MessageCircle,
+  Plus,
   Search,
   SearchX,
   ShoppingBag,
@@ -25,8 +28,8 @@ import {
 import { CartProvider, useCart } from "@/lib/cart";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { useAuth } from "@/lib/auth_context";
-import ProductModal from "./client/Storefront/ProductModal";
-import CartDrawer from "./client/Storefront/CartDrawer";
+import ProductModal from "./Storefront/ProductModal";
+import CartDrawer from "./Storefront/CartDrawer";
 
 /*
   As cores vêm da loja via variáveis CSS no elemento raiz:
@@ -89,6 +92,16 @@ function Storefront({ slug }: { slug: string }) {
     return () => {
       active = false;
     };
+  }, [slug]);
+
+  // Busca os produtos de novo para pegar o estoque atualizado depois de um pedido
+  const reloadProducts = useCallback(async () => {
+    try {
+      const p = await getPublicProducts(slug);
+      if (p.dados) setProducts(p.dados);
+    } catch {
+      // Se falhar, mantém a lista atual; o backend ainda valida o estoque no pedido
+    }
   }, [slug]);
 
   const visible = useMemo(() => {
@@ -302,7 +315,13 @@ function Storefront({ slug }: { slug: string }) {
         />
       )}
 
-      {cartOpen && <CartDrawer store={store} onClose={() => setCartOpen(false)} />}
+      {cartOpen && (
+        <CartDrawer
+          store={store}
+          onClose={() => setCartOpen(false)}
+          onOrderPlaced={reloadProducts}
+        />
+      )}
     </div>
   );
 }
@@ -353,27 +372,60 @@ function ProductGrid({
 }
 
 function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () => void }) {
+  const { items, addItem } = useCart();
+  const [justAdded, setJustAdded] = useState(false);
+
   const hasPromo = product.promotionalPrice != null && product.promotionalPrice < product.price;
   const outOfStock = product.stockQuantity <= 0;
-  const cover = product.images[0];
+  const [cover, second] = product.images;
+  const photoCount = product.images.length;
+  const inCart = items.find((i) => i.productId === product.id)?.quantity ?? 0;
+  const canAdd = !outOfStock && inCart < product.stockQuantity;
+
+  // Volta o botão ao normal depois do "Adicionado"
+  useEffect(() => {
+    if (!justAdded) return;
+    const t = setTimeout(() => setJustAdded(false), 1500);
+    return () => clearTimeout(t);
+  }, [justAdded]);
+
+  function handleAdd() {
+    if (!canAdd) return;
+    addItem(product, 1);
+    setJustAdded(true);
+  }
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--store-primary)]"
-    >
-      <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-slate-100 text-slate-400">
+    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-[var(--store-primary)]">
+      {/* Foto: clicar abre o produto com a galeria completa */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Ver fotos de ${product.name}`}
+        className="relative flex aspect-square w-full cursor-pointer items-center justify-center overflow-hidden bg-slate-100 text-slate-400 outline-none"
+      >
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={cover.url}
-            alt={product.name}
-            loading="lazy"
-            className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-              outOfStock ? "opacity-60 grayscale-[40%]" : ""
-            }`}
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={cover.url}
+              alt={product.name}
+              loading="lazy"
+              className={`h-full w-full object-cover transition duration-300 ${
+                second ? "group-hover:opacity-0" : "group-hover:scale-105"
+              } ${outOfStock ? "opacity-60 grayscale-[40%]" : ""}`}
+            />
+            {/* Segunda foto aparece ao passar o mouse */}
+            {second && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={second.url}
+                alt=""
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+              />
+            )}
+          </>
         ) : (
           <span className="flex flex-col items-center gap-1 text-body-sm">
             <ImageOff size={22} aria-hidden="true" />
@@ -391,10 +443,23 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
             Esgotado
           </span>
         )}
-      </div>
+        {photoCount > 1 && (
+          <span className="absolute right-2.5 bottom-2.5 flex items-center gap-1 rounded-full bg-slate-900/70 px-2 py-1 text-[11px] font-semibold text-white">
+            <Images size={12} aria-hidden="true" />
+            {photoCount} fotos
+          </span>
+        )}
+      </button>
 
-      <div className="flex flex-col gap-1.5 px-3.5 pt-3 pb-4">
-        <span className="line-clamp-2 text-body-md font-semibold text-slate-900">{product.name}</span>
+      <div className="flex flex-1 flex-col gap-1.5 px-3.5 pt-3 pb-4">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-left text-body-md font-semibold text-slate-900 outline-none hover:text-[var(--store-primary)]"
+        >
+          <span className="line-clamp-2">{product.name}</span>
+        </button>
+
         <div className="flex flex-wrap items-baseline gap-2">
           {hasPromo && (
             <span className="text-body-sm text-slate-400 line-through">{formatPrice(product.price)}</span>
@@ -403,7 +468,37 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
             {formatPrice(hasPromo ? product.promotionalPrice! : product.price)}
           </span>
         </div>
+
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!canAdd}
+          aria-label={`Adicionar ${product.name} ao carrinho`}
+          className={`mt-auto inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg text-label-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--store-primary)] disabled:cursor-not-allowed ${
+            justAdded
+              ? "bg-emerald-600 text-white"
+              : canAdd
+                ? "bg-[var(--store-primary)] text-white hover:bg-[var(--store-secondary)]"
+                : "bg-slate-100 text-slate-400"
+          }`}
+        >
+          {justAdded ? (
+            <>
+              <Check size={16} aria-hidden="true" />
+              Adicionado
+            </>
+          ) : outOfStock ? (
+            "Esgotado"
+          ) : !canAdd ? (
+            "Limite do estoque"
+          ) : (
+            <>
+              <Plus size={16} aria-hidden="true" />
+              Adicionar
+            </>
+          )}
+        </button>
       </div>
-    </button>
+    </article>
   );
 }

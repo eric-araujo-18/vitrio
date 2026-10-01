@@ -55,7 +55,7 @@ export default function ShopkeeperDashboardPage() {
         subtitle="Resumo da sua loja nos últimos 30 dias."
         actions={
           <Link
-            href={`/store/${store.slug}`}
+            href={`/store/${store.slug}/client`}
             target="_blank"
             rel="noopener noreferrer"
             className={btnSecondary}

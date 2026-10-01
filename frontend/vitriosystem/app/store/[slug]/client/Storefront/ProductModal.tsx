@@ -21,6 +21,7 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
   const inCart = items.find((i) => i.productId === product.id)?.quantity ?? 0;
   const available = Math.max(0, product.stockQuantity - inCart);
   const hasPromo = product.promotionalPrice != null && product.promotionalPrice < product.price;
+  const unitPrice = hasPromo ? product.promotionalPrice! : product.price;
   const image = product.images[imageIndex];
 
   useLockBodyScroll();
@@ -105,13 +106,25 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
             </h2>
           </div>
 
-          <div className="flex flex-wrap items-baseline gap-2.5">
-            {hasPromo && (
-              <span className="text-body-md text-slate-400 line-through">{formatPrice(product.price)}</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              {hasPromo && (
+                <span className="text-body-md text-slate-400 line-through">
+                  {formatPrice(product.price * quantity)}
+                </span>
+              )}
+              <span
+                aria-live="polite"
+                className="text-[28px] leading-tight font-extrabold text-[var(--store-primary)] tabular-nums"
+              >
+                {formatPrice(unitPrice * quantity)}
+              </span>
+            </div>
+            {quantity > 1 && (
+              <span className="text-body-sm text-slate-500">
+                {quantity} × {formatPrice(unitPrice)} cada
+              </span>
             )}
-            <span className="text-[28px] leading-tight font-extrabold text-[var(--store-primary)]">
-              {formatPrice(hasPromo ? product.promotionalPrice! : product.price)}
-            </span>
           </div>
 
           {product.description && (
@@ -145,6 +158,7 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
                 <button type="button" onClick={handleAdd} className={storePrimaryButton}>
                   <ShoppingBag size={18} aria-hidden="true" />
                   Adicionar ao carrinho
+                  <span className="font-semibold opacity-80">{formatPrice(unitPrice * quantity)}</span>
                 </button>
               </>
             )}

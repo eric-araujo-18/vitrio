@@ -74,7 +74,7 @@ export function StoreCard({ store }: { store: Store }) {
 
       <div className="flex w-full gap-2 md:w-auto">
         <Link
-          href={`/store/${store.slug}`}
+          href={`/store/${store.slug}/client`}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Ver vitrine"

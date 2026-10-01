@@ -31,6 +31,8 @@ import {
 interface CartDrawerProps {
   store: PublicStore;
   onClose: () => void;
+  /** Chamado depois que o pedido é criado, para a página recarregar o estoque. */
+  onOrderPlaced?: () => void;
 }
 
 type Step = "cart" | "checkout" | "done";
@@ -41,7 +43,7 @@ const STEP_TITLES: Record<Step, string> = {
   done: "Pedido enviado",
 };
 
-export default function CartDrawer({ store, onClose }: CartDrawerProps) {
+export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawerProps) {
   const { items, totalPrice, setQuantity, removeItem, clear } = useCart();
 
   const [step, setStep] = useState<Step>("cart");
@@ -83,6 +85,7 @@ export default function CartDrawer({ store, onClose }: CartDrawerProps) {
       setCreated(result);
       clear();
       setStep("done");
+      onOrderPlaced?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar o pedido.");
     } finally {

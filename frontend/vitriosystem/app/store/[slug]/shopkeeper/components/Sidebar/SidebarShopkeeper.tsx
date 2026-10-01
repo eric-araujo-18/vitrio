@@ -127,7 +127,7 @@ export default function SidebarShopkeeper() {
       {/* Rodapé */}
       <div className="flex flex-col gap-0.5 border-t border-slate-200/85 p-3">
         <Link
-          href={`/store/${store.slug}`}
+          href={`/store/${store.slug}/client`}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Ver vitrine"
