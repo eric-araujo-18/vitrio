@@ -77,6 +77,12 @@ export default function ProductsShopkeeper() {
       return exists ? prev.map((p) => (p.id === product.id ? product : p)) : [product, ...prev];
     });
     setEditing(null);
+
+    // Ligar cores também muda o grupo do outro produto, então atualiza a lista
+    // em segundo plano (sem mostrar o carregando).
+    getProductsByStore(store.id)
+      .then(({ dados }) => dados && setProducts(dados))
+      .catch(() => {});
   }
 
   const closeDeleteDialog = useCallback(() => {

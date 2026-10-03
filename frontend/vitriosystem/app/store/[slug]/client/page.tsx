@@ -30,6 +30,7 @@ import { formatPrice, whatsappLink } from "@/lib/format";
 import { useAuth } from "@/lib/auth_context";
 import ProductModal from "./Storefront/ProductModal";
 import CartDrawer from "./Storefront/CartDrawer";
+import { ColorDot } from "./Storefront/Ui";
 
 /*
   As cores vêm da loja via variáveis CSS no elemento raiz:
@@ -114,6 +115,21 @@ function Storefront({ slug }: { slug: string }) {
   }, [products, activeCategory, search]);
 
   const featured = useMemo(() => products.filter((p) => p.isFeatured).slice(0, 8), [products]);
+
+  // Cores de uma mesma peça: produtos com o mesmo colorGroupId.
+  const colorGroups = useMemo(() => {
+    const groups = new Map<string, PublicProduct[]>();
+    for (const p of products) {
+      if (!p.colorGroupId) continue;
+      groups.set(p.colorGroupId, [...(groups.get(p.colorGroupId) ?? []), p]);
+    }
+    return groups;
+  }, [products]);
+
+  const colorsOf = useCallback(
+    (p: PublicProduct) => (p.colorGroupId ? (colorGroups.get(p.colorGroupId) ?? [p]) : [p]),
+    [colorGroups]
+  );
 
   if (status === "loading") {
     return (
@@ -236,7 +252,7 @@ function Storefront({ slug }: { slug: string }) {
               />
               Destaques
             </h2>
-            <ProductGrid products={featured} onOpen={setSelected} />
+            <ProductGrid products={featured} colorsOf={colorsOf} onOpen={setSelected} />
           </section>
         )}
 
@@ -284,7 +300,7 @@ function Storefront({ slug }: { slug: string }) {
               </p>
             </div>
           ) : (
-            <ProductGrid products={visible} onOpen={setSelected} />
+            <ProductGrid products={visible} colorsOf={colorsOf} onOpen={setSelected} />
           )}
         </section>
       </main>
@@ -307,6 +323,8 @@ function Storefront({ slug }: { slug: string }) {
       {selected && (
         <ProductModal
           product={selected}
+          colorOptions={colorsOf(selected)}
+          onSelectColor={setSelected}
           onClose={() => setSelected(null)}
           onAdded={() => {
             setSelected(null);
@@ -357,23 +375,51 @@ function CategoryChip({
 
 function ProductGrid({
   products,
+  colorsOf,
   onOpen,
 }: {
   products: PublicProduct[];
+  colorsOf: (product: PublicProduct) => PublicProduct[];
   onOpen: (product: PublicProduct) => void;
 }) {
+  // Cores da mesma peça viram um card só (com bolinhas para trocar):
+  // fica a primeira cor que aparecer na lista filtrada.
+  const seenGroups = new Set<string>();
+  const cards = products.filter((p) => {
+    if (!p.colorGroupId) return true;
+    if (seenGroups.has(p.colorGroupId)) return false;
+    seenGroups.add(p.colorGroupId);
+    return true;
+  });
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4 min-[721px]:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-      {products.map((p) => (
-        <ProductTile key={p.id} product={p} onOpen={() => onOpen(p)} />
+      {cards.map((p) => (
+        <ProductTile key={p.colorGroupId ?? p.id} product={p} colors={colorsOf(p)} onOpen={onOpen} />
       ))}
     </div>
   );
 }
 
-function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () => void }) {
+const MAX_CARD_COLORS = 5;
+
+function ProductTile({
+  product: initial,
+  colors,
+  onOpen,
+}: {
+  product: PublicProduct;
+  /** Todas as cores da mesma peça (inclui o próprio produto) */
+  colors: PublicProduct[];
+  onOpen: (product: PublicProduct) => void;
+}) {
   const { items, addItem } = useCart();
   const [justAdded, setJustAdded] = useState(false);
+
+  // Cor mostrada no card: começa na do produto e muda ao clicar nas bolinhas.
+  const [activeId, setActiveId] = useState(initial.id);
+  const product = colors.find((c) => c.id === activeId) ?? initial;
+  const hasColors = colors.length > 1;
 
   const hasPromo = product.promotionalPrice != null && product.promotionalPrice < product.price;
   const outOfStock = product.stockQuantity <= 0;
@@ -398,7 +444,7 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
   function handleAdd() {
     if (!canAdd) return;
     if (hasVariants) {
-      onOpen();
+      onOpen(product);
       return;
     }
     addItem(product, 1);
@@ -410,8 +456,8 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
       {/* Foto: clicar abre o produto com a galeria completa */}
       <button
         type="button"
-        onClick={onOpen}
-        aria-label={`Ver fotos de ${product.name}`}
+        onClick={() => onOpen(product)}
+        aria-label={`Ver fotos de ${product.name}${product.colorName ? ` ${product.colorName}` : ""}`}
         className="relative flex aspect-square w-full cursor-pointer items-center justify-center overflow-hidden bg-slate-100 text-slate-400 outline-none"
       >
         {cover ? (
@@ -464,7 +510,7 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
       <div className="flex flex-1 flex-col gap-1.5 px-3.5 pt-3 pb-4">
         <button
           type="button"
-          onClick={onOpen}
+          onClick={() => onOpen(product)}
           className="text-left text-body-md font-semibold text-slate-900 outline-none hover:text-[var(--store-primary)]"
         >
           <span className="line-clamp-2">{product.name}</span>
@@ -478,6 +524,39 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
             {formatPrice(hasPromo ? product.promotionalPrice! : product.price)}
           </span>
         </div>
+
+        {hasColors && (
+          <div className="flex items-center gap-1.5" role="group" aria-label="Cores">
+            {colors.slice(0, MAX_CARD_COLORS).map((c) => {
+              const active = c.id === product.id;
+              const colorLabel = c.colorName ?? c.name;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setActiveId(c.id)}
+                  aria-pressed={active}
+                  aria-label={`Ver na cor ${colorLabel}`}
+                  title={colorLabel}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full transition focus-visible:outline-2 focus-visible:outline-[var(--store-primary)] ${
+                    active ? "ring-2 ring-[var(--store-primary)]" : "hover:ring-1 hover:ring-slate-300"
+                  }`}
+                >
+                  <ColorDot hex={c.colorHex} className={`h-5 w-5 ${c.stockQuantity <= 0 ? "opacity-40" : ""}`} />
+                </button>
+              );
+            })}
+            {colors.length > MAX_CARD_COLORS && (
+              <button
+                type="button"
+                onClick={() => onOpen(product)}
+                className="text-body-sm font-semibold text-slate-500 hover:text-slate-900"
+              >
+                +{colors.length - MAX_CARD_COLORS}
+              </button>
+            )}
+          </div>
+        )}
 
         {sizesInStock.length > 0 && (
           <span className="truncate text-body-sm text-slate-500" title={sizesInStock.join(", ")}>

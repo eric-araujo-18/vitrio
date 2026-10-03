@@ -20,6 +20,9 @@ namespace BackendSystemVitrio.Models
         public ProductVariant? Variant { get; set; }
         public string? Size { get; set; }
 
+        // Cópia da cor do produto no momento da compra (ex: "Azul marinho").
+        public string? Color { get; set; }
+
         public required string ProductName { get; set; }
         public string? ImageUrl { get; set; }
         public decimal UnitPrice { get; set; }

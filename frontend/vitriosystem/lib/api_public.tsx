@@ -30,6 +30,10 @@ export interface PublicProduct {
   promotionalPrice: number | null;
   stockQuantity: number;
   isFeatured: boolean;
+  /** Produtos com o mesmo colorGroupId são a mesma peça em outras cores. */
+  colorName: string | null;
+  colorHex: string | null;
+  colorGroupId: string | null;
   category: ProductCategory | null;
   images: ProductImage[];
   /** Tamanhos (vazio = produto sem tamanho) */

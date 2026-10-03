@@ -88,3 +88,20 @@ export function QuantityStepper({
     </div>
   );
 }
+
+/* ===========================
+   BOLINHA DE COR
+=========================== */
+
+/** Círculo com a cor do produto. Sem cor cadastrada, mostra um círculo tracejado. */
+export function ColorDot({ hex, className = "h-5 w-5" }: { hex: string | null; className?: string }) {
+  return hex ? (
+    <span
+      aria-hidden="true"
+      className={`block shrink-0 rounded-full shadow-[inset_0_0_0_1px_rgba(15,23,42,0.15)] ${className}`}
+      style={{ backgroundColor: hex }}
+    />
+  ) : (
+    <span aria-hidden="true" className={`block shrink-0 rounded-full border border-dashed border-slate-400 ${className}`} />
+  );
+}

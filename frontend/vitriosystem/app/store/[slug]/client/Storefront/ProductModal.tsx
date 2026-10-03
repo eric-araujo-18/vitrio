@@ -1,19 +1,37 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, ImageOff, ShoppingBag, X } from "lucide-react";
 import type { PublicProduct } from "@/lib/api_public";
 import { cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
-import { QuantityStepper, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
+import { ColorDot, QuantityStepper, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
 
 interface ProductModalProps {
   product: PublicProduct;
+  /** Outras cores da mesma peça (inclui o próprio produto). Com 2 ou mais, aparecem as bolinhas. */
+  colorOptions?: PublicProduct[];
+  /** Troca o produto exibido por outra cor da mesma peça. */
+  onSelectColor?: (product: PublicProduct) => void;
   onClose: () => void;
   onAdded: () => void;
 }
 
-export default function ProductModal({ product, onClose, onAdded }: ProductModalProps) {
+// Com um único tamanho em estoque, ele já vem selecionado.
+function initialVariantId(product: PublicProduct, preferredSize?: string | null): number | null {
+  const inStock = (product.variants ?? []).filter((v) => v.stockQuantity > 0);
+  const sameSize = preferredSize ? inStock.find((v) => v.size === preferredSize) : undefined;
+  if (sameSize) return sameSize.id;
+  return inStock.length === 1 ? inStock[0].id : null;
+}
+
+export default function ProductModal({
+  product,
+  colorOptions = [],
+  onSelectColor,
+  onClose,
+  onAdded,
+}: ProductModalProps) {
   const { addItem, items } = useCart();
   const [imageIndex, setImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -22,11 +40,22 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
   // Com um único tamanho disponível, ele já vem selecionado.
   const variants = product.variants ?? [];
   const hasVariants = variants.length > 0;
-  const [variantId, setVariantId] = useState<number | null>(() => {
-    const inStock = variants.filter((v) => v.stockQuantity > 0);
-    return inStock.length === 1 ? inStock[0].id : null;
-  });
+  const [variantId, setVariantId] = useState<number | null>(() => initialVariantId(product));
   const variant = variants.find((v) => v.id === variantId) ?? null;
+
+  // Ao trocar de cor, o modal continua aberto com outro produto: volta para a
+  // primeira foto e tenta manter o tamanho que o cliente já tinha escolhido.
+  const lastSize = useRef<string | null>(null);
+  const shownProductId = useRef(product.id);
+  useEffect(() => {
+    if (shownProductId.current === product.id) return;
+    shownProductId.current = product.id;
+    setImageIndex(0);
+    setQuantity(1);
+    setVariantId(initialVariantId(product, lastSize.current));
+  }, [product]);
+
+  const showColors = colorOptions.length > 1 && !!onSelectColor;
   const needsSize = hasVariants && !variant;
 
   const inCart = items.find((i) => i.key === cartItemKey(product.id, variant?.id))?.quantity ?? 0;
@@ -45,6 +74,7 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
   }, [onClose]);
 
   function chooseSize(id: number) {
+    lastSize.current = variants.find((v) => v.id === id)?.size ?? null;
     setVariantId(id);
     setQuantity(1); // cada tamanho tem um estoque diferente
   }
@@ -151,6 +181,48 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
           )}
 
           <div className="mt-auto flex flex-col gap-4 border-t border-slate-100 pt-4">
+            {showColors && (
+              <fieldset>
+                <legend className="mb-2.5 text-body-md font-semibold text-slate-900">
+                  Cor
+                  {product.colorName && (
+                    <span className="ml-1.5 font-normal text-slate-500">{product.colorName}</span>
+                  )}
+                </legend>
+                <div className="flex flex-wrap gap-2.5">
+                  {colorOptions.map((option) => {
+                    const active = option.id === product.id;
+                    const soldOut = option.stockQuantity <= 0;
+                    const colorLabel = option.colorName ?? option.name;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => !active && onSelectColor!(option)}
+                        aria-pressed={active}
+                        aria-label={soldOut ? `${colorLabel}, esgotado` : colorLabel}
+                        title={soldOut ? `${colorLabel} (esgotado)` : colorLabel}
+                        className={`relative flex h-10 w-10 items-center justify-center rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--store-primary)] ${
+                          active
+                            ? "ring-2 ring-[var(--store-primary)] ring-offset-2"
+                            : "ring-1 ring-slate-200 hover:ring-slate-400"
+                        }`}
+                      >
+                        <ColorDot hex={option.colorHex} className={`h-8 w-8 ${soldOut ? "opacity-40" : ""}`} />
+                        {/* Risco diagonal nas cores esgotadas (o cliente ainda pode ver as fotos) */}
+                        {soldOut && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute h-0.5 w-9 rotate-45 rounded-full bg-slate-500"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
+
             {hasVariants && product.stockQuantity > 0 && (
               <fieldset>
                 <legend className="mb-2.5 text-body-md font-semibold text-slate-900">

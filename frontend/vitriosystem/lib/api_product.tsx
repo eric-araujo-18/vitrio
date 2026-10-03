@@ -35,6 +35,10 @@ export interface Product {
   stockQuantity: number;
   isActive: boolean;
   isFeatured: boolean;
+  /** Cor desta peça. Produtos com o mesmo colorGroupId são a mesma peça em outras cores. */
+  colorName: string | null;
+  colorHex: string | null;
+  colorGroupId: string | null;
   creationDate: string;
   updatedDate: string | null;
   images: ProductImage[];
@@ -66,6 +70,10 @@ export interface CreateProductPayload {
   images?: ProductImagePayload[];
   /** Vazio = produto sem tamanho. Com itens, o estoque vira a soma dos tamanhos. */
   variants?: ProductVariantPayload[];
+  colorName?: string;
+  colorHex?: string;
+  /** Liga este produto a outro como "mesma peça, outra cor". Ausente = fora de qualquer grupo. */
+  colorLinkedProductId?: number;
 }
 
 // Edição é "completa": o formulário manda todos os campos de novo.

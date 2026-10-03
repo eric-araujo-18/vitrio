@@ -32,6 +32,12 @@ namespace BackendSystemVitrio.DTO
         public decimal? PromotionalPrice { get; set; }
         public int StockQuantity { get; set; }
         public bool IsFeatured { get; set; }
+
+        // Produtos com o mesmo ColorGroupId são a mesma peça em outras cores.
+        public string? ColorName { get; set; }
+        public string? ColorHex { get; set; }
+        public Guid? ColorGroupId { get; set; }
+
         public ProductCategoryDto? Category { get; set; }
         public List<ProductImageResponseDto> Images { get; set; } = new();
 

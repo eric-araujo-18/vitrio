@@ -19,6 +19,7 @@ export interface CartItem {
   productId: number;
   variantId: number | null;
   size: string | null;
+  color: string | null;
   name: string;
   imageUrl: string | null;
   unitPrice: number;
@@ -53,6 +54,7 @@ function normalize(raw: unknown): CartItem[] {
       ...i,
       variantId,
       size: i.size ?? null,
+      color: i.color ?? null,
       key: cartItemKey(i.productId, variantId),
     } as CartItem;
   });
@@ -107,6 +109,7 @@ export function CartProvider({ storeSlug, children }: { storeSlug: string; child
             productId: product.id,
             variantId: variant?.id ?? null,
             size: variant?.size ?? null,
+            color: product.colorName ?? null,
             name: product.name,
             imageUrl: product.images[0]?.url ?? null,
             unitPrice: effectivePrice(product),

@@ -102,6 +102,22 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
       <div className="flex min-w-0 flex-1 flex-col gap-1 px-3.5 pt-3 pb-3.5">
         <span className="line-clamp-2 text-body-md font-semibold text-on-surface">{product.name}</span>
 
+        {product.colorName && (
+          <span className="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
+            <span
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 shrink-0 rounded-full ${
+                product.colorHex
+                  ? "shadow-[inset_0_0_0_1px_rgba(15,23,42,0.2)]"
+                  : "border border-dashed border-slate-400"
+              }`}
+              style={product.colorHex ? { backgroundColor: product.colorHex } : undefined}
+            />
+            {product.colorName}
+            {product.colorGroupId && <span className="text-outline">(tem outras cores)</span>}
+          </span>
+        )}
+
         {(product.category || product.sku) && (
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-body-sm">
             {product.category && <span className="text-on-surface-variant">{product.category.name}</span>}

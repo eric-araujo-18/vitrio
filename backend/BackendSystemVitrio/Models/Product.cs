@@ -38,6 +38,14 @@ namespace BackendSystemVitrio.Models
         // Se o produto tiver variações (tamanhos), é a soma do estoque delas.
         public int StockQuantity { get; set; } = 0;
 
+        // ===== Cor =====
+        // Cada cor de uma mesma peça é um produto próprio (com fotos, tamanhos e
+        // estoque próprios). Produtos com o mesmo ColorGroupId são "a mesma peça
+        // em cores diferentes", e a vitrine mostra as bolinhas para trocar entre eles.
+        public string? ColorName { get; set; }   // ex: "Azul marinho"
+        public string? ColorHex { get; set; }    // ex: "#1E3A8A", usado para desenhar a bolinha
+        public Guid? ColorGroupId { get; set; }
+
         // Permite esconder o produto sem excluí-lo
         public bool IsActive { get; set; } = true;
 

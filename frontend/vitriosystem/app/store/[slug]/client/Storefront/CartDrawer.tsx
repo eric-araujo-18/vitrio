@@ -197,9 +197,18 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
 
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       <span className="line-clamp-2 text-body-md font-semibold text-slate-900">{item.name}</span>
-                      {item.size && (
-                        <span className="w-fit rounded-md bg-slate-100 px-2 py-0.5 text-body-sm font-semibold text-slate-700">
-                          Tamanho {item.size}
+                      {(item.color || item.size) && (
+                        <span className="flex flex-wrap gap-1.5">
+                          {item.color && (
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-body-sm font-semibold text-slate-700">
+                              {item.color}
+                            </span>
+                          )}
+                          {item.size && (
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-body-sm font-semibold text-slate-700">
+                              Tamanho {item.size}
+                            </span>
+                          )}
                         </span>
                       )}
                       <span className="text-body-sm text-slate-500">{formatPrice(item.unitPrice)} cada</span>
@@ -219,7 +228,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
                       <button
                         type="button"
                         onClick={() => removeItem(item.key)}
-                        aria-label={`Remover ${item.name}${item.size ? ` tamanho ${item.size}` : ""}`}
+                        aria-label={`Remover ${item.name}${item.color ? ` ${item.color}` : ""}${item.size ? ` tamanho ${item.size}` : ""}`}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                       >
                         <Trash2 size={16} aria-hidden="true" />

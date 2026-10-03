@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text.RegularExpressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Helpers;
@@ -13,6 +14,8 @@ namespace BackendSystemVitrio.Services.ProductService
         private const int MaxImagesPerProduct = 8;
         private const int MaxVariantsPerProduct = 30;
         private const int MaxSizeLength = 20;
+        private const int MaxColorNameLength = 40;
+        private static readonly Regex HexColor = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
         private readonly AppDbContext _context;
 
@@ -71,7 +74,8 @@ namespace BackendSystemVitrio.Services.ProductService
                     return Response<ProductResponseDto>.Fail("Loja não encontrada.");
 
                 var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
-                                      ?? ValidateVariants(dto.Variants);
+                                      ?? ValidateVariants(dto.Variants)
+                                      ?? ValidateColor(dto.ColorName, dto.ColorHex, dto.ColorLinkedProductId);
                 if (validationError is not null)
                     return Response<ProductResponseDto>.Fail(validationError);
 
@@ -98,7 +102,13 @@ namespace BackendSystemVitrio.Services.ProductService
                     IsFeatured = dto.IsFeatured,
                     Images = BuildImages(dto.Images),
                     Variants = BuildVariants(dto.Variants),
+                    ColorName = EmptyToNull(dto.ColorName),
+                    ColorHex = NormalizeHex(dto.ColorHex),
                 };
+
+                var colorError = await ApplyColorGroupAsync(product, dto.ColorLinkedProductId);
+                if (colorError is not null)
+                    return Response<ProductResponseDto>.Fail(colorError);
 
                 // Com tamanhos, o estoque do produto é a soma deles.
                 if (product.Variants.Count > 0)
@@ -128,7 +138,8 @@ namespace BackendSystemVitrio.Services.ProductService
                     return Response<ProductResponseDto>.Fail("Produto não encontrado.");
 
                 var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
-                                      ?? ValidateVariants(dto.Variants);
+                                      ?? ValidateVariants(dto.Variants)
+                                      ?? ValidateColor(dto.ColorName, dto.ColorHex, dto.ColorLinkedProductId);
                 if (validationError is not null)
                     return Response<ProductResponseDto>.Fail(validationError);
 
@@ -149,7 +160,13 @@ namespace BackendSystemVitrio.Services.ProductService
                 product.StockQuantity = dto.StockQuantity;
                 product.IsActive = dto.IsActive;
                 product.IsFeatured = dto.IsFeatured;
+                product.ColorName = EmptyToNull(dto.ColorName);
+                product.ColorHex = NormalizeHex(dto.ColorHex);
                 product.UpdatedDate = DateTime.UtcNow;
+
+                var colorError = await ApplyColorGroupAsync(product, dto.ColorLinkedProductId);
+                if (colorError is not null)
+                    return Response<ProductResponseDto>.Fail(colorError);
 
                 if (dto.Images is not null)
                 {
@@ -264,6 +281,56 @@ namespace BackendSystemVitrio.Services.ProductService
             return null;
         }
 
+        private static string? ValidateColor(string? colorName, string? colorHex, int? linkedProductId)
+        {
+            if (colorName is not null && colorName.Trim().Length > MaxColorNameLength)
+                return $"O nome da cor pode ter no máximo {MaxColorNameLength} caracteres.";
+
+            if (!string.IsNullOrWhiteSpace(colorHex) && !HexColor.IsMatch(colorHex.Trim()))
+                return "Cor inválida. Use o formato #RRGGBB.";
+
+            // Sem nome, a vitrine não teria como mostrar qual cor é qual.
+            if (linkedProductId.HasValue && string.IsNullOrWhiteSpace(colorName))
+                return "Informe o nome da cor para ligar este produto a outra cor da mesma peça.";
+
+            return null;
+        }
+
+        private static string? NormalizeHex(string? hex)
+            => string.IsNullOrWhiteSpace(hex) ? null : hex.Trim().ToUpperInvariant();
+
+        // Coloca o produto no mesmo grupo de cores do produto escolhido.
+        // Se o escolhido ainda não tem grupo, cria um e coloca os dois nele.
+        // linkedProductId null = o produto sai do grupo em que estava.
+        private async Task<string?> ApplyColorGroupAsync(Product product, int? linkedProductId)
+        {
+            if (!linkedProductId.HasValue)
+            {
+                product.ColorGroupId = null;
+                return null;
+            }
+
+            if (linkedProductId.Value == product.Id)
+                return "Um produto não pode ser ligado a ele mesmo.";
+
+            var linked = await _context.Product.FirstOrDefaultAsync(p =>
+                p.Id == linkedProductId.Value &&
+                p.StoreId == product.StoreId &&
+                p.DeletionDate == null);
+
+            if (linked is null)
+                return "O produto escolhido como outra cor não foi encontrado nesta loja.";
+
+            if (linked.ColorGroupId is null)
+            {
+                linked.ColorGroupId = Guid.NewGuid();
+                linked.UpdatedDate = DateTime.UtcNow;
+            }
+
+            product.ColorGroupId = linked.ColorGroupId;
+            return null;
+        }
+
         private static List<ProductVariant> BuildVariants(List<ProductVariantInputDto>? variants)
             => (variants ?? new())
                 .Select((v, index) => new ProductVariant
@@ -347,6 +414,9 @@ namespace BackendSystemVitrio.Services.ProductService
             StockQuantity = p.StockQuantity,
             IsActive = p.IsActive,
             IsFeatured = p.IsFeatured,
+            ColorName = p.ColorName,
+            ColorHex = p.ColorHex,
+            ColorGroupId = p.ColorGroupId,
             CreationDate = p.CreationDate,
             UpdatedDate = p.UpdatedDate,
             Images = p.Images

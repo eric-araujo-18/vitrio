@@ -9,6 +9,7 @@ export interface OrderItem {
   productId: number | null;
   productName: string;
   size: string | null;
+  color: string | null;
   imageUrl: string | null;
   unitPrice: number;
   quantity: number;

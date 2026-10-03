@@ -80,6 +80,17 @@ namespace BackendSystemVitrio.Data
                 .HasPrecision(12, 2);
 
             modelBuilder.Entity<Product>()
+                .HasIndex(p => p.ColorGroupId);
+
+            modelBuilder.Entity<Product>()
+                .Property(p => p.ColorName)
+                .HasMaxLength(40);
+
+            modelBuilder.Entity<Product>()
+                .Property(p => p.ColorHex)
+                .HasMaxLength(7);
+
+            modelBuilder.Entity<Product>()
                 .HasOne(p => p.Category)
                 .WithMany(c => c.Products)
                 .HasForeignKey(p => p.CategoryId)
@@ -153,6 +164,10 @@ namespace BackendSystemVitrio.Data
             modelBuilder.Entity<OrderItem>()
                 .Property(i => i.Size)
                 .HasMaxLength(20);
+
+            modelBuilder.Entity<OrderItem>()
+                .Property(i => i.Color)
+                .HasMaxLength(40);
         }
     }
 }

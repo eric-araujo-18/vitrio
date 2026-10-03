@@ -124,6 +124,9 @@ namespace BackendSystemVitrio.Services.PublicService
             PromotionalPrice = p.PromotionalPrice,
             StockQuantity = p.StockQuantity,
             IsFeatured = p.IsFeatured,
+            ColorName = p.ColorName,
+            ColorHex = p.ColorHex,
+            ColorGroupId = p.ColorGroupId,
             Category = p.Category == null ? null : new ProductCategoryDto
             {
                 Id = p.Category.Id,

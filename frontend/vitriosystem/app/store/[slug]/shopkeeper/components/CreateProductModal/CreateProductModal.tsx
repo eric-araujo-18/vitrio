@@ -16,13 +16,14 @@ import {
 import { unwrap } from "@/lib/api";
 import {
   createProduct,
+  getProductsByStore,
   updateProduct,
   type Product,
   type UpdateProductPayload,
 } from "@/lib/api_product";
 import { getCategoriesByStore, type Category } from "@/lib/api_category";
 import { uploadImage } from "@/lib/upload";
-import { SIZE_GRIDS, detectSizeGrid, type SizeGrid } from "@/lib/Sizes";
+import { SIZE_GRIDS, detectSizeGrid, type SizeGrid } from "@/lib/sizes";
 import { ErrorBox, btnPrimary, btnSecondary, hint, input, label } from "../Ui";
 
 const MAX_IMAGES = 8;
@@ -63,6 +64,19 @@ function moneyToInput(value: number | null | undefined) {
   return value == null ? "" : value.toFixed(2).replace(".", ",");
 }
 
+// Atalhos de cor: um clique preenche nome e bolinha.
+const COMMON_COLORS: [string, string][] = [
+  ["Preto", "#111111"],
+  ["Branco", "#FFFFFF"],
+  ["Cinza", "#9CA3AF"],
+  ["Azul marinho", "#1E3A8A"],
+  ["Azul", "#2563EB"],
+  ["Vermelho", "#DC2626"],
+  ["Verde", "#16A34A"],
+  ["Bege", "#D6C3A3"],
+  ["Rosa", "#EC4899"],
+];
+
 let keySeq = 0;
 const newKey = () => `img-${Date.now()}-${keySeq++}`;
 
@@ -88,6 +102,11 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
   const [sizeStock, setSizeStock] = useState<Record<string, string>>(() =>
     Object.fromEntries((product?.variants ?? []).map((v) => [v.size, String(v.stockQuantity)]))
   );
+  // Cor: cada cor de uma peça é um produto próprio, ligado aos outros pelo grupo.
+  const [colorName, setColorName] = useState(product?.colorName ?? "");
+  const [colorHex, setColorHex] = useState(product?.colorHex ?? "");
+  const [linkedProductId, setLinkedProductId] = useState<string>("");
+  const [storeProducts, setStoreProducts] = useState<Product[]>([]);
   const [images, setImages] = useState<PendingImage[]>(
     (product?.images ?? []).map((img) => ({ key: newKey(), url: img.url, uploading: false }))
   );
@@ -112,6 +131,30 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
       active = false;
     };
   }, [storeId]);
+
+  // Produtos da loja para o campo "Mesma peça que". Busca sempre a lista atual,
+  // porque ligar uma cor também muda o grupo do outro produto.
+  useEffect(() => {
+    let active = true;
+    getProductsByStore(storeId)
+      .then(({ dados }) => {
+        if (!active) return;
+        const list = dados ?? [];
+        setStoreProducts(list);
+        if (product) {
+          const current = list.find((p) => p.id === product.id);
+          const groupId = current?.colorGroupId ?? product.colorGroupId;
+          const sibling = groupId ? list.find((p) => p.id !== product.id && p.colorGroupId === groupId) : undefined;
+          if (sibling) setLinkedProductId(String(sibling.id));
+        }
+      })
+      .catch(() => active && setStoreProducts([]));
+    return () => {
+      active = false;
+    };
+  }, [storeId, product]);
+
+  const linkOptions = storeProducts.filter((p) => p.id !== product?.id);
 
   // Fecha com Esc
   useEffect(() => {
@@ -225,6 +268,11 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
     // A ordem da grade vira a ordem de exibição na vitrine.
     const variants = offeredSizes.map((size) => ({ size, stockQuantity: Number(sizeStock[size]) }));
 
+    if (linkedProductId && !colorName.trim()) {
+      setError("Informe o nome da cor deste produto para ligá-lo às outras cores.");
+      return;
+    }
+
     if (isUploading) {
       setError("Aguarde o envio das imagens terminar.");
       return;
@@ -244,6 +292,10 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
       isFeatured,
       images: images.map((img, index) => ({ url: img.url, order: index })),
       variants, // vazio remove os tamanhos do produto
+      colorName: colorName.trim() || undefined,
+      colorHex: colorHex || undefined,
+      // Ausente = o produto sai do grupo de cores
+      colorLinkedProductId: linkedProductId ? Number(linkedProductId) : undefined,
     };
 
     setLoading(true);
@@ -472,6 +524,89 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
                   </p>
                 </>
               )}
+            </Section>
+
+            {/* Cor */}
+            <Section title="Cor">
+              <p className={hint}>
+                Vende a mesma peça em outras cores? Cadastre cada cor como um produto, com as fotos dela, e ligue
+                os produtos em &quot;Mesma peça que&quot;. Na vitrine eles viram um card só, com bolinhas para trocar a cor.
+              </p>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
+                <Field id="productColorName" label="Nome da cor">
+                  <input
+                    id="productColorName"
+                    value={colorName}
+                    onChange={(e) => setColorName(e.target.value)}
+                    placeholder="Ex: Azul marinho"
+                    maxLength={40}
+                    className={input}
+                  />
+                </Field>
+                <Field id="productColorHex" label="Bolinha">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="productColorHex"
+                      type="color"
+                      value={colorHex || "#cccccc"}
+                      onChange={(e) => setColorHex(e.target.value.toUpperCase())}
+                      className="h-11 w-14 cursor-pointer rounded-lg border border-slate-300 bg-white p-1"
+                    />
+                    {colorHex && (
+                      <button
+                        type="button"
+                        onClick={() => setColorHex("")}
+                        className="text-body-sm text-on-surface-variant hover:text-on-surface hover:underline"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                </Field>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5" aria-label="Cores comuns">
+                {COMMON_COLORS.map(([colorLabel, hex]) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => {
+                      setColorName(colorLabel);
+                      setColorHex(hex);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-body-sm text-on-surface transition-colors hover:bg-surface-container-low"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 rounded-full shadow-[inset_0_0_0_1px_rgba(15,23,42,0.2)]"
+                      style={{ backgroundColor: hex }}
+                    />
+                    {colorLabel}
+                  </button>
+                ))}
+              </div>
+
+              <Field
+                id="productColorLink"
+                label="Mesma peça que"
+                hint="Escolha outra cor desta mesma peça. Deixe em branco se o produto não tem outras cores."
+              >
+                <select
+                  id="productColorLink"
+                  value={linkedProductId}
+                  onChange={(e) => setLinkedProductId(e.target.value)}
+                  className={input}
+                >
+                  <option value="">Nenhuma (produto sem outras cores)</option>
+                  {linkOptions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.colorName ? ` (${p.colorName})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </Section>
 
             {/* Visibilidade */}

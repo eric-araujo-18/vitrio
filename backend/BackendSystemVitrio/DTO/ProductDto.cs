@@ -42,6 +42,14 @@ namespace BackendSystemVitrio.DTO
         // Se vier com itens, o estoque do produto passa a ser a soma dos tamanhos
         // (StockQuantity acima é ignorado).
         public List<ProductVariantInputDto>? Variants { get; set; }
+
+        // Cor desta peça (opcional). Ex: "Azul marinho" e "#1E3A8A".
+        public string? ColorName { get; set; }
+        public string? ColorHex { get; set; }
+
+        // Liga este produto a outro como "mesma peça, outra cor".
+        // null = produto não faz parte de nenhum grupo de cores.
+        public int? ColorLinkedProductId { get; set; }
     }
 
     // Atualização completa (o formulário de edição manda todos os campos).
@@ -61,6 +69,14 @@ namespace BackendSystemVitrio.DTO
         public bool IsFeatured { get; set; }
         public List<CreateProductImageDto>? Images { get; set; }
         public List<ProductVariantInputDto>? Variants { get; set; }
+
+        // Cor desta peça (opcional). Ex: "Azul marinho" e "#1E3A8A".
+        public string? ColorName { get; set; }
+        public string? ColorHex { get; set; }
+
+        // Liga este produto a outro como "mesma peça, outra cor".
+        // null = produto não faz parte de nenhum grupo de cores.
+        public int? ColorLinkedProductId { get; set; }
     }
 
     public class ProductImageResponseDto
@@ -98,6 +114,10 @@ namespace BackendSystemVitrio.DTO
 
         public bool IsActive { get; set; }
         public bool IsFeatured { get; set; }
+
+        public string? ColorName { get; set; }
+        public string? ColorHex { get; set; }
+        public Guid? ColorGroupId { get; set; }
 
         public DateTime CreationDate { get; set; }
         public DateTime? UpdatedDate { get; set; }

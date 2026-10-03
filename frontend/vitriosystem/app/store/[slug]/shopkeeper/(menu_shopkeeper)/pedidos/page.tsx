@@ -206,6 +206,11 @@ export default function OrdersPage() {
                                 >
                                   <span className="min-w-0 text-on-surface">
                                     <span className="font-semibold">{item.quantity}×</span> {item.productName}{" "}
+                                    {item.color && (
+                                      <span className="mr-1 inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-body-sm font-semibold text-on-surface">
+                                        {item.color}
+                                      </span>
+                                    )}
                                     {item.size && (
                                       <span className="mr-1 inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-body-sm font-semibold text-on-surface">
                                         Tam. {item.size}
