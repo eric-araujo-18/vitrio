@@ -21,6 +21,12 @@ namespace BackendSystemVitrio.DTO
         public string? CustomerEmail { get; set; }
         public string? Notes { get; set; }
         public List<CreateOrderItemDto> Items { get; set; } = new();
+
+        // Endereço de entrega — um dos dois:
+        // AddressId: endereço salvo na conta (só para cliente logado);
+        // ShippingAddress: endereço digitado no checkout (com ou sem login).
+        public int? AddressId { get; set; }
+        public AddressInputDto? ShippingAddress { get; set; }
     }
 
     // ===== Painel do lojista =====
@@ -56,6 +62,10 @@ namespace BackendSystemVitrio.DTO
         public decimal Total { get; set; }
         public DateTime CreationDate { get; set; }
         public DateTime? UpdatedDate { get; set; }
+
+        // Nulo em pedidos antigos, de antes do endereço existir
+        public ShippingAddressDto? ShippingAddress { get; set; }
+
         public List<OrderItemResponseDto> Items { get; set; } = new();
     }
 
@@ -70,6 +80,7 @@ namespace BackendSystemVitrio.DTO
         public required string StoreName { get; set; }
         public required string StoreSlug { get; set; }
         public string? StorePhone { get; set; }
+        public ShippingAddressDto? ShippingAddress { get; set; }
         public List<OrderItemResponseDto> Items { get; set; } = new();
     }
 

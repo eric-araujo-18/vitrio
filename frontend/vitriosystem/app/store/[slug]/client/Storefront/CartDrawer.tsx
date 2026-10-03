@@ -17,6 +17,17 @@ import { createPublicOrder, type OrderCreated, type PublicStore } from "@/lib/ap
 import { unwrap } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { useAuth } from "@/lib/auth_context";
+import { createAddress, getMyAddresses } from "@/lib/api_custumer";
+import {
+  EMPTY_ADDRESS,
+  addressLine1,
+  addressLine2,
+  toAddressPayload,
+  validateAddress,
+  type AddressFormValues,
+  type SavedAddress,
+} from "@/lib/address";
+import AddressFields from "./AddressFields";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { formatPhone, isValidPhone, isvalidEmail } from "@/lib/validators";
 import {
@@ -57,6 +68,14 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Endereço de entrega.
+  // Sem login: o cliente sempre digita.
+  // Logado: escolhe um endereço salvo ou digita um novo (e pode salvá-lo na conta).
+  const [addressForm, setAddressForm] = useState<AddressFormValues>(EMPTY_ADDRESS);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[] | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<number | "new">("new");
+  const [saveNewAddress, setSaveNewAddress] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<OrderCreated | null>(null);
@@ -70,6 +89,28 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
     setName((v) => v || user.name);
     setEmail((v) => v || user.email);
     setPhone((v) => v || (user.phone ? formatPhone(user.phone) : ""));
+  }, [user]);
+
+  // Logado: carrega os endereços salvos e já seleciona o padrão.
+  useEffect(() => {
+    if (!user) {
+      setSavedAddresses(null);
+      setSelectedAddress("new");
+      return;
+    }
+    let active = true;
+    getMyAddresses()
+      .then(({ dados }) => {
+        if (!active) return;
+        const list = dados ?? [];
+        setSavedAddresses(list);
+        const preferred = list.find((a) => a.isDefault) ?? list[0];
+        setSelectedAddress(preferred ? preferred.id : "new");
+      })
+      .catch(() => active && setSavedAddresses([]));
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   useEffect(() => {
@@ -86,14 +127,40 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
     if (!isValidPhone(phone)) return setError("Informe um telefone válido com DDD.");
     if (email.trim() && !isvalidEmail(email.trim())) return setError("E-mail inválido.");
 
+    const usingSaved = !!user && selectedAddress !== "new";
+    if (!usingSaved) {
+      const invalidAddress = validateAddress(addressForm);
+      if (invalidAddress) return setError(invalidAddress);
+    }
+
     setSending(true);
     try {
+      // Endereço salvo -> manda só o id. Novo -> manda o endereço inteiro
+      // (e, se o cliente logado pediu, salva na conta antes).
+      let addressId: number | undefined = usingSaved ? (selectedAddress as number) : undefined;
+      let shippingAddress = usingSaved ? undefined : toAddressPayload(addressForm);
+
+      if (user && !usingSaved && saveNewAddress) {
+        try {
+          const saved = await unwrap(createAddress(toAddressPayload(addressForm)));
+          setSavedAddresses((prev) => [...(prev ?? []), saved]);
+          setSelectedAddress(saved.id);
+          addressId = saved.id;
+          shippingAddress = undefined;
+        } catch {
+          // Não conseguiu salvar na conta (ex: limite de endereços): segue com o
+          // endereço digitado, o pedido não pode travar por causa disso.
+        }
+      }
+
       const result = await unwrap(
         createPublicOrder(store.slug, {
           customerName: name.trim(),
           customerPhone: phone,
           customerEmail: email.trim() || undefined,
           notes: notes.trim() || undefined,
+          addressId,
+          shippingAddress,
           items: items.map((i) => ({
             productId: i.productId,
             variantId: i.variantId ?? undefined,
@@ -326,6 +393,53 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                     />
                   </Field>
 
+                  {/* Endereço de entrega */}
+                  <fieldset className="flex flex-col gap-3 border-t border-slate-100 pt-4">
+                    <legend className="mb-3 text-title-md font-bold text-slate-900">Endereço de entrega</legend>
+
+                    {user && savedAddresses && savedAddresses.length > 0 && (
+                      <div role="radiogroup" aria-label="Endereços salvos" className="flex flex-col gap-2">
+                        {savedAddresses.map((a) => (
+                          <AddressOption
+                            key={a.id}
+                            checked={selectedAddress === a.id}
+                            onSelect={() => setSelectedAddress(a.id)}
+                            disabled={sending}
+                            title={a.label || "Endereço"}
+                            badge={a.isDefault ? "Padrão" : undefined}
+                          >
+                            <span className="block text-body-sm text-slate-600">{addressLine1(a)}</span>
+                            <span className="block text-body-sm text-slate-500">{addressLine2(a)}</span>
+                          </AddressOption>
+                        ))}
+                        <AddressOption
+                          checked={selectedAddress === "new"}
+                          onSelect={() => setSelectedAddress("new")}
+                          disabled={sending}
+                          title="Usar outro endereço"
+                        />
+                      </div>
+                    )}
+
+                    {(!user || selectedAddress === "new") && (
+                      <>
+                        <AddressFields idPrefix="c-addr" value={addressForm} onChange={setAddressForm} disabled={sending} />
+                        {user && (
+                          <label className="flex items-center gap-2.5 text-body-md text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={saveNewAddress}
+                              onChange={(e) => setSaveNewAddress(e.target.checked)}
+                              disabled={sending}
+                              className="h-4 w-4 accent-[var(--store-primary)]"
+                            />
+                            Salvar este endereço na minha conta
+                          </label>
+                        )}
+                      </>
+                    )}
+                  </fieldset>
+
                   <Field id="c-notes" label="Observações">
                     <textarea
                       id="c-notes"
@@ -334,7 +448,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                       onChange={(e) => setNotes(e.target.value)}
                       maxLength={500}
                       disabled={sending}
-                      placeholder="Endereço de entrega, tamanho, cor, forma de pagamento..."
+                      placeholder="Ponto de referência, forma de pagamento, horário para entrega..."
                       className={`${storeInput} resize-y py-2.5`}
                     />
                   </Field>
@@ -397,6 +511,51 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
         )}
       </aside>
     </div>
+  );
+}
+
+// Opção de endereço no checkout (um "radio" com cara de cartão)
+function AddressOption({
+  checked,
+  onSelect,
+  disabled,
+  title,
+  badge,
+  children,
+}: {
+  checked: boolean;
+  onSelect: () => void;
+  disabled?: boolean;
+  title: string;
+  badge?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-[color-mix(in_srgb,var(--store-primary)_20%,transparent)] ${
+        checked ? "border-[var(--store-primary)] bg-[color-mix(in_srgb,var(--store-primary)_5%,white)]" : "border-slate-200 hover:border-slate-300"
+      }`}
+    >
+      <input
+        type="radio"
+        name="checkout-address"
+        checked={checked}
+        onChange={onSelect}
+        disabled={disabled}
+        className="mt-1 h-4 w-4 shrink-0 accent-[var(--store-primary)]"
+      />
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-center gap-2 text-body-md font-semibold text-slate-900">
+          {title}
+          {badge && (
+            <span className="rounded-full bg-[color-mix(in_srgb,var(--store-primary)_12%,white)] px-2 py-0.5 text-label-sm text-[var(--store-primary)]">
+              {badge}
+            </span>
+          )}
+        </span>
+        {children}
+      </span>
+    </label>
   );
 }
 

@@ -8,6 +8,7 @@ using BackendSystemVitrio.Services.CategoryService;
 using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
+using BackendSystemVitrio.Services.CustomerService;
 using BackendSystemVitrio.Services.StoreService;
 using BackendSystemVitrio.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -58,6 +59,7 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPublicService, PublicService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
 
 builder.Services.AddAuthentication(options =>
 {

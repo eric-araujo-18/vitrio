@@ -1,6 +1,7 @@
 // ===== Vitrine pública (sem login) =====
 
 import { request } from "./api";
+import type { AddressPayload } from "./api_custumer";
 import type { ProductCategory, ProductImage, ProductVariant } from "./api_product";
 
 export interface PublicStore {
@@ -46,6 +47,10 @@ export interface CreateOrderPayload {
   customerEmail?: string;
   notes?: string;
   items: { productId: number; variantId?: number; quantity: number }[];
+  /** Endereço salvo na conta (cliente logado) */
+  addressId?: number;
+  /** Endereço digitado no checkout */
+  shippingAddress?: AddressPayload;
 }
 
 export interface OrderCreated {

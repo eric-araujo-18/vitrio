@@ -24,6 +24,17 @@ namespace BackendSystemVitrio.Models
         public string? CustomerEmail { get; set; }
         public string? Notes { get; set; }
 
+        // ===== Endereço de entrega =====
+        // Cópia do endereço no momento do pedido (digitado no checkout ou vindo de um
+        // endereço salvo). Nulo só em pedidos antigos, de antes do endereço existir.
+        public string? ShippingCep { get; set; }
+        public string? ShippingState { get; set; }
+        public string? ShippingCity { get; set; }
+        public string? ShippingNeighborhood { get; set; }
+        public string? ShippingStreet { get; set; }
+        public string? ShippingNumber { get; set; }
+        public string? ShippingComplement { get; set; }
+
         public OrderStatus Status { get; set; } = OrderStatus.Pending;
 
         public decimal Total { get; set; }

@@ -157,6 +157,18 @@ namespace BackendSystemVitrio.Services.OrderService
                         StoreName = o.Store!.Name,
                         StoreSlug = o.Store.Slug,
                         StorePhone = o.Store.Phone,
+                        ShippingAddress = o.ShippingCep == null
+                            ? null
+                            : new ShippingAddressDto
+                            {
+                                Cep = o.ShippingCep,
+                                State = o.ShippingState!,
+                                City = o.ShippingCity!,
+                                Neighborhood = o.ShippingNeighborhood,
+                                Street = o.ShippingStreet!,
+                                Number = o.ShippingNumber!,
+                                Complement = o.ShippingComplement,
+                            },
                         Items = o.Items
                             .OrderBy(i => i.Id)
                             .Select(i => new OrderItemResponseDto
@@ -203,6 +215,30 @@ namespace BackendSystemVitrio.Services.OrderService
                 if (dto.Items.Count > MaxItemsPerOrder)
                     return Response<OrderCreatedDto>.Fail("Pedido com itens demais.");
 
+                // Endereço de entrega: salvo na conta (AddressId) ou digitado no checkout.
+                AddressData? shipping;
+                if (dto.AddressId.HasValue)
+                {
+                    if (!customerUserId.HasValue)
+                        return Response<OrderCreatedDto>.Fail("Entre na sua conta para usar um endereço salvo.");
+
+                    // Só aceita endereço da própria conta.
+                    var saved = await _context.CustomerAddress.FirstOrDefaultAsync(a =>
+                        a.Id == dto.AddressId.Value && a.UserId == customerUserId.Value);
+
+                    if (saved is null)
+                        return Response<OrderCreatedDto>.Fail("Endereço não encontrado. Escolha outro ou digite um novo.");
+
+                    shipping = new AddressData(saved.Cep, saved.State, saved.City, saved.Neighborhood,
+                        saved.Street, saved.Number, saved.Complement);
+                }
+                else
+                {
+                    var addressError = AddressHelper.Normalize(dto.ShippingAddress, out shipping);
+                    if (addressError is not null)
+                        return Response<OrderCreatedDto>.Fail(addressError);
+                }
+
                 // Junta itens repetidos do mesmo produto e tamanho.
                 var requested = dto.Items
                     .GroupBy(i => new { i.ProductId, i.VariantId })
@@ -235,6 +271,13 @@ namespace BackendSystemVitrio.Services.OrderService
                     CustomerPhone = phone,
                     CustomerEmail = string.IsNullOrWhiteSpace(dto.CustomerEmail) ? null : dto.CustomerEmail.Trim(),
                     Notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim(),
+                    ShippingCep = shipping!.Cep,
+                    ShippingState = shipping.State,
+                    ShippingCity = shipping.City,
+                    ShippingNeighborhood = shipping.Neighborhood,
+                    ShippingStreet = shipping.Street,
+                    ShippingNumber = shipping.Number,
+                    ShippingComplement = shipping.Complement,
                 };
 
                 foreach (var item in requested)
@@ -354,6 +397,18 @@ namespace BackendSystemVitrio.Services.OrderService
             Total = o.Total,
             CreationDate = o.CreationDate,
             UpdatedDate = o.UpdatedDate,
+            ShippingAddress = o.ShippingCep == null
+                ? null
+                : new ShippingAddressDto
+                {
+                    Cep = o.ShippingCep,
+                    State = o.ShippingState!,
+                    City = o.ShippingCity!,
+                    Neighborhood = o.ShippingNeighborhood,
+                    Street = o.ShippingStreet!,
+                    Number = o.ShippingNumber!,
+                    Complement = o.ShippingComplement,
+                },
             Items = o.Items
                 .OrderBy(i => i.Id)
                 .Select(i => new OrderItemResponseDto

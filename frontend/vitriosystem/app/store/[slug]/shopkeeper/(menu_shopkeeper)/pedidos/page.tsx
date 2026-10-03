@@ -6,6 +6,7 @@ import {
   Inbox,
   LoaderCircle,
   Mail,
+  MapPin,
   MessageCircle,
   RefreshCw,
   StickyNote,
@@ -15,6 +16,7 @@ import { unwrap } from "@/lib/api";
 import { getOrdersByStore, updateOrderStatus, type Order, type OrderStatus } from "@/lib/api_order";
 import { formatDateTime, formatPrice, ORDER_NEXT_STATUS, ORDER_STATUS_LABELS, whatsappLink } from "@/lib/format";
 import { formatPhone } from "@/lib/validators";
+import { addressLine1, addressLine2 } from "@/lib/address";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
 import {
   EmptyState,
@@ -224,6 +226,18 @@ export default function OrdersPage() {
                                 </div>
                               ))}
                             </div>
+
+                            {/* Endereço de entrega */}
+                            {order.shippingAddress && (
+                              <div className="flex items-start gap-2 rounded-lg bg-surface-container-low px-3 py-2.5 text-body-md text-on-surface">
+                                <MapPin size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-outline" />
+                                <div>
+                                  <strong className="block">Entregar em</strong>
+                                  <span className="block">{addressLine1(order.shippingAddress)}</span>
+                                  <span className="block text-on-surface-variant">{addressLine2(order.shippingAddress)}</span>
+                                </div>
+                              </div>
+                            )}
 
                             {/* Observações e e-mail */}
                             {(order.notes || order.customerEmail) && (

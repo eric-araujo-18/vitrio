@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   LogOut,
+  MapPin,
   MessageCircle,
   Package,
   Plus,
@@ -35,6 +36,7 @@ import ProductModal from "./Storefront/ProductModal";
 import CartDrawer from "./Storefront/CartDrawer";
 import CustomerAuthModal from "./Storefront/CustomerAuthModal";
 import MyOrdersDrawer from "./Storefront/Myordersdrawer";
+import AddressesDrawer from "./Storefront/AddressesDrawer";
 import { ColorDot } from "./Storefront/Ui";
 
 /*
@@ -78,6 +80,7 @@ function Storefront({ slug }: { slug: string }) {
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [addressesOpen, setAddressesOpen] = useState(false);
 
   // Carrega loja + categorias + produtos uma vez; filtros são feitos no cliente
   // (vitrines pequenas/médias — o backend limita a 500 produtos).
@@ -211,6 +214,7 @@ function Storefront({ slug }: { slug: string }) {
               userName={user?.name ?? null}
               onLogin={() => setAuthOpen(true)}
               onShowOrders={() => setOrdersOpen(true)}
+              onShowAddresses={() => setAddressesOpen(true)}
               onLogout={logoutHere}
             />
 
@@ -364,6 +368,8 @@ function Storefront({ slug }: { slug: string }) {
         <MyOrdersDrawer storeSlug={store.slug} storeName={store.name} onClose={() => setOrdersOpen(false)} />
       )}
 
+      {addressesOpen && user && <AddressesDrawer onClose={() => setAddressesOpen(false)} />}
+
       {/* Por último: abre por cima do carrinho quando o cliente clica em "Entre" no checkout */}
       {authOpen && <CustomerAuthModal storeName={store.name} onClose={() => setAuthOpen(false)} />}
     </div>
@@ -379,11 +385,13 @@ function AccountMenu({
   userName,
   onLogin,
   onShowOrders,
+  onShowAddresses,
   onLogout,
 }: {
   userName: string | null;
   onLogin: () => void;
   onShowOrders: () => void;
+  onShowAddresses: () => void;
   onLogout: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -456,6 +464,18 @@ function AccountMenu({
           >
             <Package size={18} aria-hidden="true" className="text-slate-500" />
             Meus pedidos
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onShowAddresses();
+            }}
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-body-md hover:bg-slate-50"
+          >
+            <MapPin size={18} aria-hidden="true" className="text-slate-500" />
+            Meus endereços
           </button>
           <button
             type="button"

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ImageOff, LoaderCircle, MessageCircle, Package, X } from "lucide-react";
+import { ImageOff, LoaderCircle, MapPin, MessageCircle, Package, X } from "lucide-react";
+import { addressLine1, addressLine2 } from "@/lib/address";
 import { getMyOrders, type CustomerOrder, type OrderStatus } from "@/lib/api_order";
 import { formatDateTime, formatPrice, ORDER_STATUS_LABELS, whatsappLink } from "@/lib/format";
 import { iconButton, storeOverlay, storeSecondaryButton, useLockBodyScroll } from "./Ui";
@@ -126,6 +127,17 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
                       </li>
                     ))}
                   </ul>
+
+                  {order.shippingAddress && (
+                    <p className="mt-3 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-body-sm text-slate-600">
+                      <MapPin size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-slate-400" />
+                      <span>
+                        {addressLine1(order.shippingAddress)}
+                        <br />
+                        {addressLine2(order.shippingAddress)}
+                      </span>
+                    </p>
+                  )}
 
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                     <span className="text-body-md text-slate-600">

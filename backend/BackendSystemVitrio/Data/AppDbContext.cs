@@ -15,6 +15,7 @@ namespace BackendSystemVitrio.Data
         public DbSet<Category> Category { get; set; }
         public DbSet<ProductImage> ProductImage { get; set; }
         public DbSet<ProductVariant> ProductVariant { get; set; }
+        public DbSet<CustomerAddress> CustomerAddress { get; set; }
         public DbSet<RefreshToken> RefreshToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
@@ -107,6 +108,39 @@ namespace BackendSystemVitrio.Data
 
             modelBuilder.Entity<Order>()
                 .HasIndex(o => o.CustomerUserId);
+
+            // ===== Endereço de entrega no pedido =====
+            modelBuilder.Entity<Order>(order =>
+            {
+                order.Property(o => o.ShippingCep).HasMaxLength(8);
+                order.Property(o => o.ShippingState).HasMaxLength(2);
+                order.Property(o => o.ShippingCity).HasMaxLength(100);
+                order.Property(o => o.ShippingNeighborhood).HasMaxLength(100);
+                order.Property(o => o.ShippingStreet).HasMaxLength(150);
+                order.Property(o => o.ShippingNumber).HasMaxLength(20);
+                order.Property(o => o.ShippingComplement).HasMaxLength(100);
+            });
+
+            // ===== CustomerAddress =====
+            // Apagar a conta apaga os endereços dela (os pedidos têm a própria cópia).
+            modelBuilder.Entity<CustomerAddress>(address =>
+            {
+                address.HasOne(a => a.User)
+                    .WithMany()
+                    .HasForeignKey(a => a.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                address.HasIndex(a => a.UserId);
+
+                address.Property(a => a.Label).HasMaxLength(40);
+                address.Property(a => a.Cep).HasMaxLength(8);
+                address.Property(a => a.State).HasMaxLength(2);
+                address.Property(a => a.City).HasMaxLength(100);
+                address.Property(a => a.Neighborhood).HasMaxLength(100);
+                address.Property(a => a.Street).HasMaxLength(150);
+                address.Property(a => a.Number).HasMaxLength(20);
+                address.Property(a => a.Complement).HasMaxLength(100);
+            });
 
             // ===== ProductVariant =====
             // Um tamanho não pode se repetir no mesmo produto.

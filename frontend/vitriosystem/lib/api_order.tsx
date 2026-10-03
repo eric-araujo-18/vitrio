@@ -1,6 +1,7 @@
 // ===== Order (painel do lojista) =====
 
 import { request } from "./api";
+import type { ShippingAddress } from "./address";
 
 export type OrderStatus = "Pending" | "Confirmed" | "Shipped" | "Delivered" | "Canceled";
 
@@ -28,6 +29,8 @@ export interface Order {
   total: number;
   creationDate: string;
   updatedDate: string | null;
+  /** Nulo em pedidos antigos, de antes do endereço existir */
+  shippingAddress: ShippingAddress | null;
   items: OrderItem[];
 }
 
@@ -80,6 +83,7 @@ export interface CustomerOrder {
   storeName: string;
   storeSlug: string;
   storePhone: string | null;
+  shippingAddress: ShippingAddress | null;
   items: OrderItem[];
 }
 
