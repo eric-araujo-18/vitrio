@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.PublicService;
@@ -53,6 +54,12 @@ namespace BackendSystemVitrio.Controllers
         [HttpPost("orders")]
         [EnableRateLimiting("public-orders")]
         public async Task<IActionResult> CreateOrder(string slug, [FromBody] CreateOrderDto dto)
-            => Ok(await _orderService.CreatePublicOrderAsync(slug, dto));
+        {
+            // A rota é pública, mas se o cliente mandou um token válido o pedido
+            // fica ligado à conta dele (aparece em "Meus pedidos"). Sem token, ou com
+            // token inválido, o pedido é feito normalmente, sem conta.
+            int? customerUserId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+            return Ok(await _orderService.CreatePublicOrderAsync(slug, dto, customerUserId));
+        }
     }
 }

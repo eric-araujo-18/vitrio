@@ -9,12 +9,26 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { logout as clearSession, getMe, bootstrapSession, type User } from "./api";
+import { logout as clearSession, getMe, bootstrapSession, ROLES, type User } from "./api";
+
+/** Lojista ou admin — quem pode usar o painel. Clientes da vitrine não. */
+export function isStaff(user: User | null): boolean {
+  return !!user && (user.role === ROLES.SHOPKEEPER || user.role === ROLES.ADMIN);
+}
+
+// Páginas da vitrine (/store/{slug}/client). Lá o cliente pode estar sem login,
+// então perder a sessão não deve mandar ninguém para o login do painel.
+function isStorefrontPath() {
+  return typeof window !== "undefined" && /^\/store\/[^/]+\/client/.test(window.location.pathname);
+}
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  logout: () => void;
+  /** Sai e vai para o login do painel. */
+  logout: () => Promise<void>;
+  /** Sai e continua na página atual (usado na vitrine). */
+  logoutHere: () => Promise<void>;
   refresh: () => Promise<void>;
   // Recarrega os dados do usuário sem ligar o "loading" global
   // (usado depois de editar o perfil, pra não desmontar a tela).
@@ -28,11 +42,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const logout = useCallback(async () => {
+  const logoutHere = useCallback(async () => {
     await clearSession();
     setUser(null);
+  }, []);
+
+  const logout = useCallback(async () => {
+    await logoutHere();
     router.push("/auth/login");
-  }, [router]);
+  }, [logoutHere, router]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -71,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function handleUnauthorized() {
       setUser(null);
-      router.push("/auth/login");
+      if (!isStorefrontPath()) router.push("/auth/login");
     }
 
     window.addEventListener("auth:unauthorized", handleUnauthorized);
@@ -79,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refresh, reloadUser }}>
+    <AuthContext.Provider value={{ user, loading, logout, logoutHere, refresh, reloadUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -91,28 +109,34 @@ export function useAuth() {
   return ctx;
 }
 
+// Painel: exige lojista/admin. Cliente da vitrine logado também é mandado
+// para o login do painel (lá ele vê o aviso de que a conta é de cliente).
 export function useRequireAuth() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const allowed = isStaff(user);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !allowed) {
       router.replace("/auth/login");
     }
-  }, [loading, user, router]);
+  }, [loading, allowed, router]);
 
-  return { user, loading };
+  return { user: allowed ? user : null, loading };
 }
 
 export function useGuestOnly() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
+  // Só lojista/admin é mandado para o painel; cliente logado pode ver o login do painel.
+  const staff = isStaff(user);
+
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && staff) {
       router.replace("/menu/initialpage");
     }
-  }, [loading, user, router]);
+  }, [loading, staff, router]);
 
   return { loading };
 }

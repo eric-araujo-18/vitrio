@@ -14,6 +14,11 @@ namespace BackendSystemVitrio.Models
         // Código curto e legível mostrado ao cliente e ao lojista (ex: "A7K3Q9").
         public required string Code { get; set; }
 
+        // Conta do cliente que fez o pedido, se ele estava logado (opcional:
+        // continua sendo possível comprar sem conta). Usado em "Meus pedidos".
+        public int? CustomerUserId { get; set; }
+        public User? CustomerUser { get; set; }
+
         public required string CustomerName { get; set; }
         public required string CustomerPhone { get; set; }
         public string? CustomerEmail { get; set; }

@@ -23,8 +23,17 @@ export interface RegisterPayload {
   // "role" removido: o backend agora sempre cria o usuário como Shopkeeper.
 }
 
+// Cadastro de cliente da vitrine (sempre vira "Client" no backend; sem CPF)
+export interface RegisterClientPayload {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string;
+}
+
 export interface LoginPayload {
-  cpf: string;
+  /** E-mail ou CPF */
+  login: string;
   password: string;
 }
 
@@ -44,7 +53,7 @@ export interface User {
   name: string;
   email: string;
   phone: string | null;
-  cpf: string;
+  cpf: string | null; // clientes da vitrine não têm CPF
   role: string;
 }
 
@@ -212,6 +221,10 @@ export async function unwrap<T>(promise: Promise<ApiResponse<T>>): Promise<T> {
 
 export function register(payload: RegisterPayload) {
   return request<string>("/api/Auth/register", "POST", payload);
+}
+
+export function registerClient(payload: RegisterClientPayload) {
+  return request<string>("/api/Auth/register/client", "POST", payload);
 }
 
 export async function login(payload: LoginPayload) {

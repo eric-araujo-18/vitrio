@@ -16,6 +16,7 @@ import {
 import { createPublicOrder, type OrderCreated, type PublicStore } from "@/lib/api_public";
 import { unwrap } from "@/lib/api";
 import { useCart } from "@/lib/cart";
+import { useAuth } from "@/lib/auth_context";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { formatPhone, isValidPhone, isvalidEmail } from "@/lib/validators";
 import {
@@ -33,6 +34,10 @@ interface CartDrawerProps {
   onClose: () => void;
   /** Chamado depois que o pedido é criado, para a página recarregar o estoque. */
   onOrderPlaced?: () => void;
+  /** Abre o "Entrar" da vitrine (conta é opcional). */
+  onRequestLogin?: () => void;
+  /** Abre "Meus pedidos" (só para quem está logado). */
+  onShowOrders?: () => void;
 }
 
 type Step = "cart" | "checkout" | "done";
@@ -43,8 +48,9 @@ const STEP_TITLES: Record<Step, string> = {
   done: "Pedido enviado",
 };
 
-export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawerProps) {
+export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLogin, onShowOrders }: CartDrawerProps) {
   const { items, totalPrice, setQuantity, removeItem, clear } = useCart();
+  const { user } = useAuth();
 
   const [step, setStep] = useState<Step>("cart");
   const [name, setName] = useState("");
@@ -56,6 +62,15 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
   const [created, setCreated] = useState<OrderCreated | null>(null);
 
   useLockBodyScroll();
+
+  // Cliente logado: preenche os dados do checkout com os da conta
+  // (só os campos ainda vazios, pra não apagar o que ele já digitou).
+  useEffect(() => {
+    if (!user) return;
+    setName((v) => v || user.name);
+    setEmail((v) => v || user.email);
+    setPhone((v) => v || (user.phone ? formatPhone(user.phone) : ""));
+  }, [user]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !sending && onClose();
@@ -163,6 +178,11 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
                   Avisar a loja no WhatsApp
                 </a>
               )}
+              {user && onShowOrders && (
+                <button type="button" onClick={onShowOrders} className={storeSecondaryButton}>
+                  Acompanhar em Meus pedidos
+                </button>
+              )}
               <button type="button" onClick={onClose} className={storeSecondaryButton}>
                 Continuar comprando
               </button>
@@ -245,6 +265,28 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
                   className="flex flex-col gap-4 py-3"
                   noValidate
                 >
+                  {user ? (
+                    <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-body-sm text-slate-600">
+                      Comprando como <strong className="text-slate-900">{user.name}</strong>. O pedido vai aparecer em
+                      &quot;Meus pedidos&quot;.
+                    </p>
+                  ) : (
+                    onRequestLogin && (
+                      <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-body-sm text-slate-600">
+                        Já tem conta?{" "}
+                        <button
+                          type="button"
+                          onClick={onRequestLogin}
+                          disabled={sending}
+                          className="font-semibold text-[var(--store-primary)] hover:underline"
+                        >
+                          Entre
+                        </button>{" "}
+                        para preencher seus dados. Não é obrigatório.
+                      </p>
+                    )
+                  )}
+
                   <Field id="c-name" label="Seu nome" required>
                     <input
                       id="c-name"

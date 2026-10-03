@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { IdCard, Lock, LogIn } from "lucide-react";
-import { login } from "@/lib/api";
+import { getMe, login, ROLES } from "@/lib/api";
 import { formatCpf, isValidCpf } from "@/lib/validators";
 import { useAuth, useGuestOnly } from "@/lib/auth_context";
 import { AuthLayout } from "../Auth/components/AuthLayout";
@@ -12,7 +12,7 @@ import { AuthError, AuthInput, AuthSubmit } from "../Auth/components/AuthFields"
 
 export default function Login() {
   const router = useRouter();
-  const { refresh } = useAuth();
+  const { refresh, logoutHere } = useAuth();
 
   const [cpf, setCpf] = useState("");
   const [password, setPassword] = useState("");
@@ -32,10 +32,18 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await login({ cpf, password });
+      const response = await login({ login: cpf, password });
 
       if (!response.status || !response.dados) {
         setError(response.mensagem ?? "Não foi possível entrar.");
+        return;
+      }
+
+      // Esta tela é do painel. Conta de cliente da vitrine não entra aqui.
+      const me = await getMe();
+      if (me.dados?.role === ROLES.CLIENT) {
+        await logoutHere();
+        setError("Esta é uma conta de cliente. Para comprar, entre pela página da loja.");
         return;
       }
 

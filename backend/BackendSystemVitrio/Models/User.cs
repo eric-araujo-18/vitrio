@@ -10,10 +10,12 @@ namespace BackendSystemVitrio.Models
 
         public string? Phone { get; set; }
 
-        // CPF agora é a única credencial usada no login, por isso é obrigatório
-        // (antes era opcional, o que quebrava o login e abria brecha de segurança
-        // quando dois usuários ficavam com Cpf nulo).
-        public required string Cpf { get; set; }
+        // Lojista: obrigatório (validado no cadastro de lojista).
+        // Cliente da vitrine: opcional — ele entra com e-mail, e o CPF só é pedido
+        // se um dia o pagamento exigir.
+        // O índice único continua valendo: no PostgreSQL vários NULL não conflitam,
+        // e o login por CPF ignora usuários sem CPF.
+        public string? Cpf { get; set; }
 
         public required Role Role { get; set; }
 

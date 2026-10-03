@@ -107,42 +107,116 @@ namespace BackendSystemVitrio.Services.AuthService
             return response;
         }
 
+        // Cadastro de cliente da vitrine. O papel é sempre Client, decidido aqui
+        // (nunca pelo corpo da requisição).
+        public async Task<Response<string>> RegisterClientAsync(RegisterClientDto dto)
+        {
+            try
+            {
+                var name = dto.Name?.Trim() ?? "";
+                if (name.Length < 2)
+                    return Response<string>.Fail("Informe seu nome.");
+
+                var email = dto.Email?.Trim().ToLowerInvariant() ?? "";
+                if (!IsValidEmail(email))
+                    return Response<string>.Fail("Informe um e-mail válido.");
+
+                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
+                    return Response<string>.Fail("A senha precisa ter pelo menos 6 caracteres.");
+
+                string? phone = null;
+                if (!string.IsNullOrWhiteSpace(dto.Phone))
+                {
+                    phone = SlugHelper.OnlyDigits(dto.Phone);
+                    if (phone is null || phone.Length < 10 || phone.Length > 11)
+                        return Response<string>.Fail("Telefone inválido. Use DDD + número.");
+                }
+
+                if (await _context.User.AnyAsync(u => u.Email == email))
+                    return Response<string>.Fail("Já existe uma conta com esse e-mail. Tente entrar.");
+
+                PasswordHelper.CreatePasswordHash(dto.Password, out byte[] hash, out byte[] salt);
+
+                _context.User.Add(new User
+                {
+                    Name = name,
+                    Email = email,
+                    Phone = phone,
+                    Cpf = null,
+                    Role = Role.Client,
+                    PasswordHash = hash,
+                    PasswordSalt = salt,
+                });
+                await _context.SaveChangesAsync();
+
+                return Response<string>.Ok("Conta criada com sucesso.", "Conta criada com sucesso.");
+            }
+            catch (Exception ex)
+            {
+                return Response<string>.Fail("Erro ao criar conta: " + ex.Message);
+            }
+        }
+
+        private static bool IsValidEmail(string email)
+        {
+            if (email.Length is < 5 or > 254 || !email.Contains('@'))
+                return false;
+            try
+            {
+                return new System.Net.Mail.MailAddress(email).Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public async Task<Response<AuthResultDto>> ValidateCredentialsAsync(LoginDto dto)
         {
             Response<AuthResultDto> response = new Response<AuthResultDto>();
 
             try
             {
-                var cpf = SlugHelper.OnlyDigits(dto.Cpf);
+                // Aceita e-mail ou CPF no mesmo campo: com "@" é e-mail, senão é CPF.
+                var identifier = (dto.Login ?? dto.Cpf ?? "").Trim();
 
-                if (cpf is null)
+                if (identifier.Length == 0)
                 {
                     response.Dados = null;
-                    response.Mensagem = "CPF inválido.";
+                    response.Mensagem = "Informe seu e-mail ou CPF.";
                     response.Status = false;
                     return response;
                 }
 
-                var user = await _context.User
-                    .FirstOrDefaultAsync(u => u.Cpf == cpf && u.DeletionDate == null);
+                User? user;
+
+                if (identifier.Contains('@'))
+                {
+                    var email = identifier.ToLowerInvariant();
+                    user = await _context.User
+                        .FirstOrDefaultAsync(u => u.Email == email && u.DeletionDate == null);
+                }
+                else
+                {
+                    var cpf = SlugHelper.OnlyDigits(identifier);
+                    user = cpf is null
+                        ? null
+                        : await _context.User.FirstOrDefaultAsync(u => u.Cpf == cpf && u.DeletionDate == null);
+                }
 
                 // Mesma mensagem pros dois casos: separar "usuário não encontrado"
                 // de "senha incorreta" permite descobrir quais CPFs têm conta.
                 if (user is null || !PasswordHelper.VerifyPasswordHash(dto.Password, user.PasswordHash, user.PasswordSalt))
                 {
                     response.Dados = null;
-                    response.Mensagem = "CPF ou senha incorretos.";
+                    response.Mensagem = "E-mail/CPF ou senha incorretos.";
                     response.Status = false;
                     return response;
                 }
 
-                if (user.Role == Role.Client)
-                {
-                    response.Dados = null;
-                    response.Mensagem = "Este acesso é exclusivo para lojistas e administradores.";
-                    response.Status = false;
-                    return response;
-                }
+                // Clientes da vitrine agora também entram por aqui. O que separa o que cada
+                // um pode fazer é o papel no token: os controllers do painel exigem
+                // [Authorize(Roles = "Shopkeeper,Admin")].
 
                 var accessToken = GenerateAccessToken(user);
                 var refreshToken = await CreateRefreshTokenAsync(user.Id);

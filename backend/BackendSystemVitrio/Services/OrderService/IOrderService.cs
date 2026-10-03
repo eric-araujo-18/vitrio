@@ -12,6 +12,10 @@ namespace BackendSystemVitrio.Services.OrderService
         Task<Response<OrderResponseDto>> UpdateStatusAsync(int orderId, int userId, OrderStatus status);
 
         // Vitrine pública (checkout)
-        Task<Response<OrderCreatedDto>> CreatePublicOrderAsync(string storeSlug, CreateOrderDto dto);
+        // customerUserId: conta do cliente, se ele estava logado (null = compra sem conta)
+        Task<Response<OrderCreatedDto>> CreatePublicOrderAsync(string storeSlug, CreateOrderDto dto, int? customerUserId = null);
+
+        // "Meus pedidos" do cliente logado (opcionalmente só de uma loja)
+        Task<Response<List<CustomerOrderDto>>> GetCustomerOrdersAsync(int userId, string? storeSlug);
     }
 }

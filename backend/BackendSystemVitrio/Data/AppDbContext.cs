@@ -30,7 +30,7 @@ namespace BackendSystemVitrio.Data
 
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Cpf)
-                .IsUnique();
+                .IsUnique(); // vários NULL (clientes sem CPF) não conflitam no PostgreSQL
 
             // ===== Store =====
             modelBuilder.Entity<Store>()
@@ -95,6 +95,18 @@ namespace BackendSystemVitrio.Data
                 .WithMany(c => c.Products)
                 .HasForeignKey(p => p.CategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // ===== Order -> cliente logado (opcional) =====
+            // Pedido feito sem login fica com CustomerUserId nulo.
+            // Se a conta for apagada, o pedido continua (com os dados copiados no pedido).
+            modelBuilder.Entity<Order>()
+                .HasOne(o => o.CustomerUser)
+                .WithMany()
+                .HasForeignKey(o => o.CustomerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Order>()
+                .HasIndex(o => o.CustomerUserId);
 
             // ===== ProductVariant =====
             // Um tamanho não pode se repetir no mesmo produto.

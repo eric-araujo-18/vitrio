@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -9,12 +9,15 @@ import {
   Images,
   LayoutDashboard,
   LoaderCircle,
+  LogOut,
   MessageCircle,
+  Package,
   Plus,
   Search,
   SearchX,
   ShoppingBag,
   Star,
+  UserRound,
   Store as StoreIcon,
 } from "lucide-react";
 import {
@@ -30,6 +33,8 @@ import { formatPrice, whatsappLink } from "@/lib/format";
 import { useAuth } from "@/lib/auth_context";
 import ProductModal from "./Storefront/ProductModal";
 import CartDrawer from "./Storefront/CartDrawer";
+import CustomerAuthModal from "./Storefront/CustomerAuthModal";
+import MyOrdersDrawer from "./Storefront/Myordersdrawer";
 import { ColorDot } from "./Storefront/Ui";
 
 /*
@@ -59,7 +64,7 @@ export default function StorefrontPage() {
 }
 
 function Storefront({ slug }: { slug: string }) {
-  const { user } = useAuth();
+  const { user, logoutHere } = useAuth();
   const { totalItems } = useCart();
 
   const [store, setStore] = useState<PublicStore | null>(null);
@@ -71,6 +76,8 @@ function Storefront({ slug }: { slug: string }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<PublicProduct | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [ordersOpen, setOrdersOpen] = useState(false);
 
   // Carrega loja + categorias + produtos uma vez; filtros são feitos no cliente
   // (vitrines pequenas/médias — o backend limita a 500 produtos).
@@ -199,6 +206,13 @@ function Storefront({ slug }: { slug: string }) {
                 <span className="hidden sm:inline">Painel</span>
               </Link>
             )}
+
+            <AccountMenu
+              userName={user?.name ?? null}
+              onLogin={() => setAuthOpen(true)}
+              onShowOrders={() => setOrdersOpen(true)}
+              onLogout={logoutHere}
+            />
 
             <button
               type="button"
@@ -338,8 +352,20 @@ function Storefront({ slug }: { slug: string }) {
           store={store}
           onClose={() => setCartOpen(false)}
           onOrderPlaced={reloadProducts}
+          onRequestLogin={() => setAuthOpen(true)}
+          onShowOrders={() => {
+            setCartOpen(false);
+            setOrdersOpen(true);
+          }}
         />
       )}
+
+      {ordersOpen && user && (
+        <MyOrdersDrawer storeSlug={store.slug} storeName={store.name} onClose={() => setOrdersOpen(false)} />
+      )}
+
+      {/* Por último: abre por cima do carrinho quando o cliente clica em "Entre" no checkout */}
+      {authOpen && <CustomerAuthModal storeName={store.name} onClose={() => setAuthOpen(false)} />}
     </div>
   );
 }
@@ -347,6 +373,107 @@ function Storefront({ slug }: { slug: string }) {
 /* ===========================
    COMPONENTES AUXILIARES
 =========================== */
+
+/** "Entrar" para visitante; para quem está logado, um menu com Meus pedidos e Sair. */
+function AccountMenu({
+  userName,
+  onLogin,
+  onShowOrders,
+  onLogout,
+}: {
+  userName: string | null;
+  onLogin: () => void;
+  onShowOrders: () => void;
+  onLogout: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Fecha ao clicar fora ou apertar Esc
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!userName) {
+    return (
+      <button
+        type="button"
+        onClick={onLogin}
+        className="inline-flex h-11 items-center gap-2 rounded-lg px-3 text-label-md font-semibold transition-colors hover:bg-white/10"
+      >
+        <UserRound size={20} aria-hidden="true" />
+        <span className="hidden sm:inline">Entrar</span>
+      </button>
+    );
+  }
+
+  const firstName = userName.split(" ")[0];
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="inline-flex h-11 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-white/10 sm:px-3"
+      >
+        <span
+          aria-hidden="true"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--store-primary)] text-label-md font-bold uppercase"
+        >
+          {firstName.charAt(0)}
+        </span>
+        <span className="hidden max-w-[120px] truncate text-label-md font-semibold sm:inline">{firstName}</span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute top-full right-0 z-30 mt-2 w-56 animate-modal-in overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-800 shadow-lg"
+        >
+          <p className="truncate border-b border-slate-100 px-4 py-2.5 text-body-sm text-slate-500">
+            Olá, <strong className="text-slate-900">{userName}</strong>
+          </p>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onShowOrders();
+            }}
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-body-md hover:bg-slate-50"
+          >
+            <Package size={18} aria-hidden="true" className="text-slate-500" />
+            Meus pedidos
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              void onLogout();
+            }}
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-body-md hover:bg-slate-50"
+          >
+            <LogOut size={18} aria-hidden="true" className="text-slate-500" />
+            Sair
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CategoryChip({
   active,

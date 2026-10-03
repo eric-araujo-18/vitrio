@@ -135,7 +135,54 @@ namespace BackendSystemVitrio.Services.OrderService
 
         // ===== Vitrine pública =====
 
-        public async Task<Response<OrderCreatedDto>> CreatePublicOrderAsync(string storeSlug, CreateOrderDto dto)
+        public async Task<Response<List<CustomerOrderDto>>> GetCustomerOrdersAsync(int userId, string? storeSlug)
+        {
+            try
+            {
+                var query = _context.Order.Where(o => o.CustomerUserId == userId);
+
+                if (!string.IsNullOrWhiteSpace(storeSlug))
+                    query = query.Where(o => o.Store!.Slug == storeSlug);
+
+                var orders = await query
+                    .OrderByDescending(o => o.CreationDate)
+                    .Take(100)
+                    .Select(o => new CustomerOrderDto
+                    {
+                        Id = o.Id,
+                        Code = o.Code,
+                        Status = o.Status,
+                        Total = o.Total,
+                        CreationDate = o.CreationDate,
+                        StoreName = o.Store!.Name,
+                        StoreSlug = o.Store.Slug,
+                        StorePhone = o.Store.Phone,
+                        Items = o.Items
+                            .OrderBy(i => i.Id)
+                            .Select(i => new OrderItemResponseDto
+                            {
+                                Id = i.Id,
+                                ProductId = i.ProductId,
+                                ProductName = i.ProductName,
+                                Size = i.Size,
+                                Color = i.Color,
+                                ImageUrl = i.ImageUrl,
+                                UnitPrice = i.UnitPrice,
+                                Quantity = i.Quantity,
+                            })
+                            .ToList(),
+                    })
+                    .ToListAsync();
+
+                return Response<List<CustomerOrderDto>>.Ok(orders);
+            }
+            catch (Exception ex)
+            {
+                return Response<List<CustomerOrderDto>>.Fail($"Erro ao buscar seus pedidos: {ex.Message}");
+            }
+        }
+
+        public async Task<Response<OrderCreatedDto>> CreatePublicOrderAsync(string storeSlug, CreateOrderDto dto, int? customerUserId = null)
         {
             try
             {
@@ -182,6 +229,7 @@ namespace BackendSystemVitrio.Services.OrderService
                 var order = new Order
                 {
                     StoreId = store.Id,
+                    CustomerUserId = customerUserId,
                     Code = await GenerateUniqueCodeAsync(),
                     CustomerName = dto.CustomerName.Trim(),
                     CustomerPhone = phone,

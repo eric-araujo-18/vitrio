@@ -68,3 +68,23 @@ export function updateOrderStatus(id: number, status: OrderStatus) {
 export function getStoreDashboard(storeId: number) {
   return request<StoreDashboard>(`/api/Store/${storeId}/dashboard`, "GET", undefined, true);
 }
+
+// ===== Área do cliente da vitrine =====
+
+export interface CustomerOrder {
+  id: number;
+  code: string;
+  status: OrderStatus;
+  total: number;
+  creationDate: string;
+  storeName: string;
+  storeSlug: string;
+  storePhone: string | null;
+  items: OrderItem[];
+}
+
+/** Pedidos do cliente logado. Com storeSlug, só os daquela loja. */
+export function getMyOrders(storeSlug?: string) {
+  const query = storeSlug ? `?storeSlug=${encodeURIComponent(storeSlug)}` : "";
+  return request<CustomerOrder[]>(`/api/Customer/orders${query}`, "GET", undefined, true);
+}

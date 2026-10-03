@@ -59,6 +59,20 @@ namespace BackendSystemVitrio.DTO
         public List<OrderItemResponseDto> Items { get; set; } = new();
     }
 
+    // "Meus pedidos" do cliente logado
+    public class CustomerOrderDto
+    {
+        public int Id { get; set; }
+        public required string Code { get; set; }
+        public OrderStatus Status { get; set; }
+        public decimal Total { get; set; }
+        public DateTime CreationDate { get; set; }
+        public required string StoreName { get; set; }
+        public required string StoreSlug { get; set; }
+        public string? StorePhone { get; set; }
+        public List<OrderItemResponseDto> Items { get; set; } = new();
+    }
+
     public class OrderSummaryDto
     {
         public int Id { get; set; }

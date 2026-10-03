@@ -77,5 +77,7 @@ export function getPublicProduct(slug: string, productSlug: string) {
 }
 
 export function createPublicOrder(slug: string, payload: CreateOrderPayload) {
-  return request<OrderCreated>(`${base(slug)}/orders`, "POST", payload);
+  // auth = true: se o cliente estiver logado, o token vai junto e o pedido fica
+  // ligado à conta dele. Sem login, o pedido é feito normalmente.
+  return request<OrderCreated>(`${base(slug)}/orders`, "POST", payload, true);
 }

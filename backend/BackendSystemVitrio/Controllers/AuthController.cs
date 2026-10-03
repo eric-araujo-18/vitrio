@@ -3,6 +3,7 @@ using BackendSystemVitrio.Extensions;
 using BackendSystemVitrio.Services.AuthService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using BackendSystemVitrio.Wrappers;
 
 namespace BackendSystemVitrio.Controllers
@@ -26,7 +27,15 @@ namespace BackendSystemVitrio.Controllers
             return Ok(response);
         }
 
+        // POST /api/Auth/register/client -> cadastro de cliente da vitrine (sempre Client)
+        [HttpPost("register/client")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> RegisterClient(RegisterClientDto dto)
+            => Ok(await _authService.RegisterClientAsync(dto));
+
+        // Limitado por IP pra dificultar tentativa de senha em massa.
         [HttpPost("login")]
+        [EnableRateLimiting("auth")]
         public async Task<IActionResult> Login(LoginDto dto)
         {
             var result = await _authService.ValidateCredentialsAsync(dto);
