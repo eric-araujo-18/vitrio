@@ -206,6 +206,11 @@ export default function OrdersPage() {
                                 >
                                   <span className="min-w-0 text-on-surface">
                                     <span className="font-semibold">{item.quantity}×</span> {item.productName}{" "}
+                                    {item.size && (
+                                      <span className="mr-1 inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-body-sm font-semibold text-on-surface">
+                                        Tam. {item.size}
+                                      </span>
+                                    )}
                                     <span className="text-body-sm text-outline">
                                       ({formatPrice(item.unitPrice)} cada)
                                     </span>

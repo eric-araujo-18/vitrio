@@ -101,6 +101,19 @@ namespace BackendSystemVitrio.Services.OrderService
                     // Devolve ao estoque o que foi reservado na criação do pedido.
                     foreach (var item in order.Items.Where(i => i.ProductId.HasValue))
                     {
+                        // Se o tamanho ainda existe, devolve pra ele e soma no total do produto.
+                        // Se o lojista apagou o tamanho, não há onde devolver: o total do
+                        // produto também não muda, pra continuar igual à soma dos tamanhos.
+                        if (item.VariantId.HasValue)
+                        {
+                            var restored = await _context.ProductVariant
+                                .Where(v => v.Id == item.VariantId.Value)
+                                .ExecuteUpdateAsync(set => set.SetProperty(v => v.StockQuantity, v => v.StockQuantity + item.Quantity));
+
+                            if (restored == 0)
+                                continue;
+                        }
+
                         await _context.Product
                             .Where(p => p.Id == item.ProductId!.Value)
                             .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity + item.Quantity));
@@ -143,22 +156,23 @@ namespace BackendSystemVitrio.Services.OrderService
                 if (dto.Items.Count > MaxItemsPerOrder)
                     return Response<OrderCreatedDto>.Fail("Pedido com itens demais.");
 
-                // Junta itens repetidos do mesmo produto.
+                // Junta itens repetidos do mesmo produto e tamanho.
                 var requested = dto.Items
-                    .GroupBy(i => i.ProductId)
-                    .Select(g => new { ProductId = g.Key, Quantity = g.Sum(i => i.Quantity) })
+                    .GroupBy(i => new { i.ProductId, i.VariantId })
+                    .Select(g => new { g.Key.ProductId, g.Key.VariantId, Quantity = g.Sum(i => i.Quantity) })
                     .ToList();
 
                 if (requested.Any(i => i.Quantity <= 0 || i.Quantity > MaxQuantityPerItem))
                     return Response<OrderCreatedDto>.Fail("Quantidade inválida em um dos itens.");
 
-                var productIds = requested.Select(i => i.ProductId).ToList();
+                var productIds = requested.Select(i => i.ProductId).Distinct().ToList();
 
                 await using var transaction = await _context.Database.BeginTransactionAsync();
 
                 // Preço SEMPRE vem do banco — nunca confiar no valor enviado pelo navegador.
                 var products = await _context.Product
                     .Include(p => p.Images)
+                    .Include(p => p.Variants)
                     .Where(p => productIds.Contains(p.Id) &&
                                 p.StoreId == store.Id &&
                                 p.IsActive &&
@@ -180,19 +194,51 @@ namespace BackendSystemVitrio.Services.OrderService
                     if (!products.TryGetValue(item.ProductId, out var product))
                         return Response<OrderCreatedDto>.Fail("Um dos produtos do carrinho não está mais disponível.");
 
-                    // Baixa atômica: só decrementa se ainda houver estoque suficiente
-                    // (evita vender a mesma unidade pra duas pessoas ao mesmo tempo).
-                    var affected = await _context.Product
-                        .Where(p => p.Id == product.Id && p.StockQuantity >= item.Quantity)
-                        .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity - item.Quantity));
+                    ProductVariant? variant = null;
 
-                    if (affected == 0)
-                        return Response<OrderCreatedDto>.Fail($"Estoque insuficiente para \"{product.Name}\".");
+                    if (product.Variants.Count > 0)
+                    {
+                        // Produto com tamanhos: o cliente precisa ter escolhido um, e ele
+                        // precisa ser deste produto.
+                        if (!item.VariantId.HasValue)
+                            return Response<OrderCreatedDto>.Fail($"Escolha o tamanho de \"{product.Name}\".");
+
+                        variant = product.Variants.FirstOrDefault(v => v.Id == item.VariantId.Value);
+                        if (variant is null)
+                            return Response<OrderCreatedDto>.Fail($"O tamanho escolhido de \"{product.Name}\" não está mais disponível.");
+
+                        // Baixa atômica no tamanho: só decrementa se ainda houver estoque suficiente
+                        // (evita vender a mesma unidade pra duas pessoas ao mesmo tempo).
+                        var selectedVariantId = variant.Id;
+                        var variantAffected = await _context.ProductVariant
+                            .Where(v => v.Id == selectedVariantId && v.StockQuantity >= item.Quantity)
+                            .ExecuteUpdateAsync(set => set.SetProperty(v => v.StockQuantity, v => v.StockQuantity - item.Quantity));
+
+                        if (variantAffected == 0)
+                            return Response<OrderCreatedDto>.Fail($"Estoque insuficiente para \"{product.Name}\" no tamanho {variant.Size}.");
+
+                        // O total do produto acompanha a soma dos tamanhos.
+                        await _context.Product
+                            .Where(p => p.Id == product.Id)
+                            .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity - item.Quantity));
+                    }
+                    else
+                    {
+                        // Produto sem tamanho: mesma baixa atômica de antes, direto no produto.
+                        var affected = await _context.Product
+                            .Where(p => p.Id == product.Id && p.StockQuantity >= item.Quantity)
+                            .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity - item.Quantity));
+
+                        if (affected == 0)
+                            return Response<OrderCreatedDto>.Fail($"Estoque insuficiente para \"{product.Name}\".");
+                    }
 
                     order.Items.Add(new OrderItem
                     {
                         OrderId = 0, // preenchido pelo EF via navigation
                         ProductId = product.Id,
+                        VariantId = variant?.Id,
+                        Size = variant?.Size,
                         ProductName = product.Name,
                         ImageUrl = product.Images.OrderBy(i => i.Order).Select(i => i.Url).FirstOrDefault(),
                         UnitPrice = product.PromotionalPrice ?? product.Price,
@@ -266,6 +312,7 @@ namespace BackendSystemVitrio.Services.OrderService
                     Id = i.Id,
                     ProductId = i.ProductId,
                     ProductName = i.ProductName,
+                    Size = i.Size,
                     ImageUrl = i.ImageUrl,
                     UnitPrice = i.UnitPrice,
                     Quantity = i.Quantity,

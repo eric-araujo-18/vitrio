@@ -8,6 +8,7 @@ export interface OrderItem {
   id: number;
   productId: number | null;
   productName: string;
+  size: string | null;
   imageUrl: string | null;
   unitPrice: number;
   quantity: number;

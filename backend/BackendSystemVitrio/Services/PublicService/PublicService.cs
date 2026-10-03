@@ -134,6 +134,10 @@ namespace BackendSystemVitrio.Services.PublicService
                 .OrderBy(i => i.Order)
                 .Select(i => new ProductImageResponseDto { Id = i.Id, Url = i.Url, Order = i.Order })
                 .ToList(),
+            Variants = p.Variants
+                .OrderBy(v => v.SortOrder)
+                .Select(v => new ProductVariantResponseDto { Id = v.Id, Size = v.Size, StockQuantity = v.StockQuantity })
+                .ToList(),
         };
     }
 }

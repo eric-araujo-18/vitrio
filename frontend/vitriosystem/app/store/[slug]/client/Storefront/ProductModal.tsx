@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlert, ImageOff, ShoppingBag, X } from "lucide-react";
 import type { PublicProduct } from "@/lib/api_public";
-import { useCart } from "@/lib/cart";
+import { cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
 import { QuantityStepper, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
 
@@ -18,8 +18,20 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
   const [imageIndex, setImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  const inCart = items.find((i) => i.productId === product.id)?.quantity ?? 0;
-  const available = Math.max(0, product.stockQuantity - inCart);
+  // Tamanhos: se o produto tiver, o cliente precisa escolher um antes de adicionar.
+  // Com um único tamanho disponível, ele já vem selecionado.
+  const variants = product.variants ?? [];
+  const hasVariants = variants.length > 0;
+  const [variantId, setVariantId] = useState<number | null>(() => {
+    const inStock = variants.filter((v) => v.stockQuantity > 0);
+    return inStock.length === 1 ? inStock[0].id : null;
+  });
+  const variant = variants.find((v) => v.id === variantId) ?? null;
+  const needsSize = hasVariants && !variant;
+
+  const inCart = items.find((i) => i.key === cartItemKey(product.id, variant?.id))?.quantity ?? 0;
+  const stock = hasVariants ? (variant?.stockQuantity ?? 0) : product.stockQuantity;
+  const available = Math.max(0, stock - inCart);
   const hasPromo = product.promotionalPrice != null && product.promotionalPrice < product.price;
   const unitPrice = hasPromo ? product.promotionalPrice! : product.price;
   const image = product.images[imageIndex];
@@ -32,9 +44,14 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  function chooseSize(id: number) {
+    setVariantId(id);
+    setQuantity(1); // cada tamanho tem um estoque diferente
+  }
+
   function handleAdd() {
-    if (available <= 0) return;
-    addItem(product, Math.min(quantity, available));
+    if (needsSize || available <= 0) return;
+    addItem(product, Math.min(quantity, available), variant);
     onAdded();
   }
 
@@ -134,10 +151,52 @@ export default function ProductModal({ product, onClose, onAdded }: ProductModal
           )}
 
           <div className="mt-auto flex flex-col gap-4 border-t border-slate-100 pt-4">
+            {hasVariants && product.stockQuantity > 0 && (
+              <fieldset>
+                <legend className="mb-2.5 text-body-md font-semibold text-slate-900">
+                  Tamanho
+                  {variant && <span className="ml-1.5 font-normal text-slate-500">{variant.size}</span>}
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {variants.map((v) => {
+                    const soldOut = v.stockQuantity <= 0;
+                    const active = v.id === variantId;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => chooseSize(v.id)}
+                        disabled={soldOut}
+                        aria-pressed={active}
+                        aria-label={soldOut ? `Tamanho ${v.size}, esgotado` : `Tamanho ${v.size}`}
+                        className={`relative flex h-11 min-w-11 items-center justify-center rounded-lg border px-3 text-body-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--store-primary)] ${
+                          active
+                            ? "border-[var(--store-primary)] bg-[var(--store-primary)] text-white"
+                            : soldOut
+                              ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300 line-through"
+                              : "border-slate-300 bg-white text-slate-800 hover:border-slate-500"
+                        }`}
+                      >
+                        {v.size}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
+
             {product.stockQuantity <= 0 ? (
               <StockWarning>Produto esgotado.</StockWarning>
+            ) : needsSize ? (
+              <button type="button" disabled className={storePrimaryButton}>
+                Escolha um tamanho
+              </button>
             ) : available <= 0 ? (
-              <StockWarning>Você já adicionou todo o estoque disponível.</StockWarning>
+              <StockWarning>
+                {variant
+                  ? `Você já adicionou todo o estoque do tamanho ${variant.size}.`
+                  : "Você já adicionou todo o estoque disponível."}
+              </StockWarning>
             ) : (
               <>
                 <div className="flex items-center gap-3">

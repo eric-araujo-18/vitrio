@@ -34,7 +34,8 @@ namespace BackendSystemVitrio.Models
         // não dá pra garantir isso só no model)
         public decimal? PromotionalPrice { get; set; }
 
-        // Quantidade disponível
+        // Quantidade disponível.
+        // Se o produto tiver variações (tamanhos), é a soma do estoque delas.
         public int StockQuantity { get; set; } = 0;
 
         // Permite esconder o produto sem excluí-lo
@@ -51,5 +52,8 @@ namespace BackendSystemVitrio.Models
 
         // Imagens do produto
         public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
+
+        // Tamanhos do produto (vazio = produto sem tamanho, usa StockQuantity direto)
+        public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
     }
 }

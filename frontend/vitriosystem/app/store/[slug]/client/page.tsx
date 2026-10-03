@@ -25,7 +25,7 @@ import {
   type PublicProduct,
   type PublicStore,
 } from "@/lib/api_public";
-import { CartProvider, useCart } from "@/lib/cart";
+import { CartProvider, cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { useAuth } from "@/lib/auth_context";
 import ProductModal from "./Storefront/ProductModal";
@@ -379,8 +379,14 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
   const outOfStock = product.stockQuantity <= 0;
   const [cover, second] = product.images;
   const photoCount = product.images.length;
-  const inCart = items.find((i) => i.productId === product.id)?.quantity ?? 0;
-  const canAdd = !outOfStock && inCart < product.stockQuantity;
+  // Produto com tamanhos não pode ir direto pro carrinho: o botão abre o produto
+  // para o cliente escolher o tamanho.
+  const variants = product.variants ?? [];
+  const hasVariants = variants.length > 0;
+  const sizesInStock = variants.filter((v) => v.stockQuantity > 0).map((v) => v.size);
+
+  const inCart = items.find((i) => i.key === cartItemKey(product.id))?.quantity ?? 0;
+  const canAdd = !outOfStock && (hasVariants || inCart < product.stockQuantity);
 
   // Volta o botão ao normal depois do "Adicionado"
   useEffect(() => {
@@ -391,6 +397,10 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
 
   function handleAdd() {
     if (!canAdd) return;
+    if (hasVariants) {
+      onOpen();
+      return;
+    }
     addItem(product, 1);
     setJustAdded(true);
   }
@@ -469,11 +479,17 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
           </span>
         </div>
 
+        {sizesInStock.length > 0 && (
+          <span className="truncate text-body-sm text-slate-500" title={sizesInStock.join(", ")}>
+            Tamanhos: {sizesInStock.join(", ")}
+          </span>
+        )}
+
         <button
           type="button"
           onClick={handleAdd}
           disabled={!canAdd}
-          aria-label={`Adicionar ${product.name} ao carrinho`}
+          aria-label={hasVariants ? `Escolher tamanho de ${product.name}` : `Adicionar ${product.name} ao carrinho`}
           className={`mt-auto inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg text-label-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--store-primary)] disabled:cursor-not-allowed ${
             justAdded
               ? "bg-emerald-600 text-white"
@@ -491,6 +507,8 @@ function ProductTile({ product, onOpen }: { product: PublicProduct; onOpen: () =
             "Esgotado"
           ) : !canAdd ? (
             "Limite do estoque"
+          ) : hasVariants ? (
+            "Escolher tamanho"
           ) : (
             <>
               <Plus size={16} aria-hidden="true" />

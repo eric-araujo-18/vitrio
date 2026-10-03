@@ -143,6 +143,25 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
             `${product.stockQuantity} em estoque`
           )}
         </span>
+
+        {/* Estoque por tamanho */}
+        {product.variants?.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1" aria-label="Estoque por tamanho">
+            {product.variants.map((v) => (
+              <span
+                key={v.id}
+                title={`Tamanho ${v.size}: ${v.stockQuantity} em estoque`}
+                className={`rounded-md border px-1.5 py-0.5 text-[11px] tabular-nums ${
+                  v.stockQuantity <= 0
+                    ? "border-red-100 bg-red-50 text-red-600"
+                    : "border-slate-200 bg-white text-on-surface-variant"
+                }`}
+              >
+                <strong className="font-semibold text-on-surface">{v.size}</strong> {v.stockQuantity}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

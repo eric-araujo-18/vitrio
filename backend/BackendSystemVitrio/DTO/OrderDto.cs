@@ -7,6 +7,10 @@ namespace BackendSystemVitrio.DTO
     public class CreateOrderItemDto
     {
         public int ProductId { get; set; }
+
+        // Obrigatório quando o produto tem tamanhos.
+        public int? VariantId { get; set; }
+
         public int Quantity { get; set; }
     }
 
@@ -31,6 +35,7 @@ namespace BackendSystemVitrio.DTO
         public int Id { get; set; }
         public int? ProductId { get; set; }
         public required string ProductName { get; set; }
+        public string? Size { get; set; }
         public string? ImageUrl { get; set; }
         public decimal UnitPrice { get; set; }
         public int Quantity { get; set; }

@@ -79,7 +79,11 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
           customerPhone: phone,
           customerEmail: email.trim() || undefined,
           notes: notes.trim() || undefined,
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          items: items.map((i) => ({
+            productId: i.productId,
+            variantId: i.variantId ?? undefined,
+            quantity: i.quantity,
+          })),
         })
       );
       setCreated(result);
@@ -181,7 +185,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
               {/* Itens */}
               {step === "cart" &&
                 items.map((item) => (
-                  <div key={item.productId} className="flex gap-3 border-b border-slate-100 py-4 last:border-b-0">
+                  <div key={item.key} className="flex gap-3 border-b border-slate-100 py-4 last:border-b-0">
                     <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -193,12 +197,17 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
 
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       <span className="line-clamp-2 text-body-md font-semibold text-slate-900">{item.name}</span>
+                      {item.size && (
+                        <span className="w-fit rounded-md bg-slate-100 px-2 py-0.5 text-body-sm font-semibold text-slate-700">
+                          Tamanho {item.size}
+                        </span>
+                      )}
                       <span className="text-body-sm text-slate-500">{formatPrice(item.unitPrice)} cada</span>
                       <QuantityStepper
                         size="sm"
                         value={item.quantity}
-                        onDecrease={() => setQuantity(item.productId, item.quantity - 1)}
-                        onIncrease={() => setQuantity(item.productId, item.quantity + 1)}
+                        onDecrease={() => setQuantity(item.key, item.quantity - 1)}
+                        onIncrease={() => setQuantity(item.key, item.quantity + 1)}
                         canIncrease={item.quantity < item.maxQuantity}
                       />
                     </div>
@@ -209,8 +218,8 @@ export default function CartDrawer({ store, onClose, onOrderPlaced }: CartDrawer
                       </strong>
                       <button
                         type="button"
-                        onClick={() => removeItem(item.productId)}
-                        aria-label={`Remover ${item.name}`}
+                        onClick={() => removeItem(item.key)}
+                        aria-label={`Remover ${item.name}${item.size ? ` tamanho ${item.size}` : ""}`}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                       >
                         <Trash2 size={16} aria-hidden="true" />

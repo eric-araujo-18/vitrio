@@ -11,6 +11,8 @@ namespace BackendSystemVitrio.Services.ProductService
     public class ProductService : IProductService
     {
         private const int MaxImagesPerProduct = 8;
+        private const int MaxVariantsPerProduct = 30;
+        private const int MaxSizeLength = 20;
 
         private readonly AppDbContext _context;
 
@@ -68,7 +70,8 @@ namespace BackendSystemVitrio.Services.ProductService
                 if (store is null)
                     return Response<ProductResponseDto>.Fail("Loja não encontrada.");
 
-                var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images);
+                var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
+                                      ?? ValidateVariants(dto.Variants);
                 if (validationError is not null)
                     return Response<ProductResponseDto>.Fail(validationError);
 
@@ -94,7 +97,12 @@ namespace BackendSystemVitrio.Services.ProductService
                     IsActive = dto.IsActive,
                     IsFeatured = dto.IsFeatured,
                     Images = BuildImages(dto.Images),
+                    Variants = BuildVariants(dto.Variants),
                 };
+
+                // Com tamanhos, o estoque do produto é a soma deles.
+                if (product.Variants.Count > 0)
+                    product.StockQuantity = product.Variants.Sum(v => v.StockQuantity);
 
                 _context.Product.Add(product);
                 await _context.SaveChangesAsync();
@@ -113,12 +121,14 @@ namespace BackendSystemVitrio.Services.ProductService
             {
                 var product = await OwnedProducts(userId)
                     .Include(p => p.Images)
+                    .Include(p => p.Variants)
                     .FirstOrDefaultAsync(p => p.Id == productId);
 
                 if (product is null)
                     return Response<ProductResponseDto>.Fail("Produto não encontrado.");
 
-                var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images);
+                var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
+                                      ?? ValidateVariants(dto.Variants);
                 if (validationError is not null)
                     return Response<ProductResponseDto>.Fail(validationError);
 
@@ -146,6 +156,13 @@ namespace BackendSystemVitrio.Services.ProductService
                     _context.ProductImage.RemoveRange(product.Images);
                     product.Images = BuildImages(dto.Images);
                 }
+
+                if (dto.Variants is not null)
+                    SyncVariants(product, dto.Variants);
+
+                // Com tamanhos, o estoque do produto é sempre a soma deles.
+                if (product.Variants.Count > 0)
+                    product.StockQuantity = product.Variants.Sum(v => v.StockQuantity);
 
                 await _context.SaveChangesAsync();
 
@@ -221,6 +238,73 @@ namespace BackendSystemVitrio.Services.ProductService
             return null;
         }
 
+        private static string? ValidateVariants(List<ProductVariantInputDto>? variants)
+        {
+            if (variants is null || variants.Count == 0)
+                return null;
+
+            if (variants.Count > MaxVariantsPerProduct)
+                return $"Cada produto pode ter no máximo {MaxVariantsPerProduct} tamanhos.";
+
+            if (variants.Any(v => string.IsNullOrWhiteSpace(v.Size)))
+                return "Informe o nome de todos os tamanhos.";
+
+            if (variants.Any(v => v.Size.Trim().Length > MaxSizeLength))
+                return $"O tamanho pode ter no máximo {MaxSizeLength} caracteres.";
+
+            if (variants.Any(v => v.StockQuantity < 0))
+                return "O estoque de um tamanho não pode ser negativo.";
+
+            var duplicated = variants
+                .GroupBy(v => v.Size.Trim().ToUpperInvariant())
+                .FirstOrDefault(g => g.Count() > 1);
+            if (duplicated is not null)
+                return $"O tamanho \"{duplicated.First().Size.Trim()}\" está repetido.";
+
+            return null;
+        }
+
+        private static List<ProductVariant> BuildVariants(List<ProductVariantInputDto>? variants)
+            => (variants ?? new())
+                .Select((v, index) => new ProductVariant
+                {
+                    ProductId = 0, // preenchido pelo EF via navigation
+                    Size = v.Size.Trim().ToUpperInvariant(),
+                    StockQuantity = v.StockQuantity,
+                    SortOrder = index,
+                })
+                .ToList();
+
+        // Atualiza os tamanhos pelo nome em vez de apagar e recriar tudo:
+        // assim o Id de um tamanho que continua existindo não muda, e os
+        // itens de pedidos antigos continuam ligados a ele.
+        private void SyncVariants(Product product, List<ProductVariantInputDto> incoming)
+        {
+            var wanted = BuildVariants(incoming);
+            var wantedSizes = wanted.Select(v => v.Size).ToHashSet();
+
+            var removed = product.Variants.Where(v => !wantedSizes.Contains(v.Size)).ToList();
+            foreach (var variant in removed)
+            {
+                product.Variants.Remove(variant);
+                _context.ProductVariant.Remove(variant);
+            }
+
+            foreach (var item in wanted)
+            {
+                var existing = product.Variants.FirstOrDefault(v => v.Size == item.Size);
+                if (existing is null)
+                {
+                    product.Variants.Add(item);
+                }
+                else
+                {
+                    existing.StockQuantity = item.StockQuantity;
+                    existing.SortOrder = item.SortOrder;
+                }
+            }
+        }
+
         // Normaliza a ordem (0..n-1) conforme a posição enviada pelo frontend.
         // ProductId não é setado: o EF preenche ao salvar pela navigation.
         private static List<ProductImage> BuildImages(List<CreateProductImageDto>? images)
@@ -272,6 +356,15 @@ namespace BackendSystemVitrio.Services.ProductService
                     Id = img.Id,
                     Url = img.Url,
                     Order = img.Order,
+                })
+                .ToList(),
+            Variants = p.Variants
+                .OrderBy(v => v.SortOrder)
+                .Select(v => new ProductVariantResponseDto
+                {
+                    Id = v.Id,
+                    Size = v.Size,
+                    StockQuantity = v.StockQuantity,
                 })
                 .ToList(),
         };

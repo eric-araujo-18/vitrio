@@ -6,6 +6,21 @@ namespace BackendSystemVitrio.DTO
         public int Order { get; set; } = 0;
     }
 
+    // Tamanho enviado pelo formulário do lojista.
+    // A ordem da lista define a ordem de exibição na vitrine.
+    public class ProductVariantInputDto
+    {
+        public required string Size { get; set; }
+        public int StockQuantity { get; set; } = 0;
+    }
+
+    public class ProductVariantResponseDto
+    {
+        public int Id { get; set; }
+        public required string Size { get; set; }
+        public int StockQuantity { get; set; }
+    }
+
     public class CreateProductDto
     {
         public required int StoreId { get; set; }
@@ -23,10 +38,15 @@ namespace BackendSystemVitrio.DTO
         public bool IsActive { get; set; } = true;
         public bool IsFeatured { get; set; } = false;
         public List<CreateProductImageDto>? Images { get; set; }
+
+        // Se vier com itens, o estoque do produto passa a ser a soma dos tamanhos
+        // (StockQuantity acima é ignorado).
+        public List<ProductVariantInputDto>? Variants { get; set; }
     }
 
     // Atualização completa (o formulário de edição manda todos os campos).
     // Images: se vier (mesmo vazia), substitui a lista inteira de imagens.
+    // Variants: se vier (mesmo vazia), substitui os tamanhos. Vazia = produto sem tamanho.
     public class UpdateProductDto
     {
         public int? CategoryId { get; set; }
@@ -40,6 +60,7 @@ namespace BackendSystemVitrio.DTO
         public bool IsActive { get; set; }
         public bool IsFeatured { get; set; }
         public List<CreateProductImageDto>? Images { get; set; }
+        public List<ProductVariantInputDto>? Variants { get; set; }
     }
 
     public class ProductImageResponseDto
@@ -82,5 +103,7 @@ namespace BackendSystemVitrio.DTO
         public DateTime? UpdatedDate { get; set; }
 
         public List<ProductImageResponseDto> Images { get; set; } = new();
+
+        public List<ProductVariantResponseDto> Variants { get; set; } = new();
     }
 }

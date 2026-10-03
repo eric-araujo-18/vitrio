@@ -8,6 +8,13 @@ export interface ProductImage {
   order: number;
 }
 
+// Tamanho do produto, com estoque próprio
+export interface ProductVariant {
+  id: number;
+  size: string;
+  stockQuantity: number;
+}
+
 export interface ProductCategory {
   id: number;
   name: string;
@@ -31,11 +38,17 @@ export interface Product {
   creationDate: string;
   updatedDate: string | null;
   images: ProductImage[];
+  variants: ProductVariant[];
 }
 
 export interface ProductImagePayload {
   url: string;
   order: number;
+}
+
+export interface ProductVariantPayload {
+  size: string;
+  stockQuantity: number;
 }
 
 export interface CreateProductPayload {
@@ -51,6 +64,8 @@ export interface CreateProductPayload {
   isActive?: boolean;
   isFeatured?: boolean;
   images?: ProductImagePayload[];
+  /** Vazio = produto sem tamanho. Com itens, o estoque vira a soma dos tamanhos. */
+  variants?: ProductVariantPayload[];
 }
 
 // Edição é "completa": o formulário manda todos os campos de novo.

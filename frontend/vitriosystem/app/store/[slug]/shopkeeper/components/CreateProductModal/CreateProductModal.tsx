@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Package,
   Plus,
+  Ruler,
   Save,
   Star,
   Trash2,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/api_product";
 import { getCategoriesByStore, type Category } from "@/lib/api_category";
 import { uploadImage } from "@/lib/upload";
+import { SIZE_GRIDS, detectSizeGrid, type SizeGrid } from "@/lib/Sizes";
 import { ErrorBox, btnPrimary, btnSecondary, hint, input, label } from "../Ui";
 
 const MAX_IMAGES = 8;
@@ -78,6 +80,14 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
   const [isActive, setIsActive] = useState(product?.isActive ?? true);
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false);
   const [categoryId, setCategoryId] = useState<string>(product?.categoryId ? String(product.categoryId) : "");
+  // Tamanhos: grade escolhida + estoque digitado em cada tamanho.
+  // Campo vazio = a loja não vende esse tamanho; "0" = vende, mas está esgotado.
+  const [sizeGrid, setSizeGrid] = useState<SizeGrid>(() =>
+    detectSizeGrid((product?.variants ?? []).map((v) => v.size))
+  );
+  const [sizeStock, setSizeStock] = useState<Record<string, string>>(() =>
+    Object.fromEntries((product?.variants ?? []).map((v) => [v.size, String(v.stockQuantity)]))
+  );
   const [images, setImages] = useState<PendingImage[]>(
     (product?.images ?? []).map((img) => ({ key: newKey(), url: img.url, uploading: false }))
   );
@@ -85,6 +95,10 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const gridSizes = sizeGrid === "none" ? [] : SIZE_GRIDS[sizeGrid].sizes;
+  const offeredSizes = gridSizes.filter((size) => (sizeStock[size] ?? "").trim() !== "");
+  const sizesTotal = offeredSizes.reduce((sum, size) => sum + (Number(sizeStock[size]) || 0), 0);
 
   const isUploading = images.some((img) => img.uploading);
   const canAddImages = images.length < MAX_IMAGES;
@@ -153,6 +167,18 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
     );
   }
 
+  function changeSizeGrid(grid: SizeGrid) {
+    setSizeGrid(grid);
+    // Ao trocar de grade, os tamanhos da grade anterior deixam de valer.
+    const allowed = new Set(grid === "none" ? [] : SIZE_GRIDS[grid].sizes);
+    setSizeStock((prev) => Object.fromEntries(Object.entries(prev).filter(([size]) => allowed.has(size))));
+  }
+
+  function setStockForSize(size: string, value: string) {
+    // Só dígitos: estoque é inteiro
+    setSizeStock((prev) => ({ ...prev, [size]: value.replace(/\D/g, "").slice(0, 5) }));
+  }
+
   function removeImage(key: string) {
     setImages((prev) => prev.filter((img) => img.key !== key));
   }
@@ -186,10 +212,18 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
     }
 
     const stockValue = Number(stockQuantity);
-    if (!Number.isInteger(stockValue) || stockValue < 0) {
+    if (sizeGrid === "none" && (!Number.isInteger(stockValue) || stockValue < 0)) {
       setError("O estoque precisa ser um número inteiro maior ou igual a zero.");
       return;
     }
+
+    if (sizeGrid !== "none" && offeredSizes.length === 0) {
+      setError("Informe o estoque de pelo menos um tamanho, ou escolha \"Sem tamanho\".");
+      return;
+    }
+
+    // A ordem da grade vira a ordem de exibição na vitrine.
+    const variants = offeredSizes.map((size) => ({ size, stockQuantity: Number(sizeStock[size]) }));
 
     if (isUploading) {
       setError("Aguarde o envio das imagens terminar.");
@@ -204,10 +238,12 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
       sku: sku.trim() || undefined,
       price: priceValue,
       promotionalPrice: promoValue,
-      stockQuantity: stockValue,
+      // Com tamanhos, o backend recalcula o total como a soma deles.
+      stockQuantity: sizeGrid === "none" ? stockValue : sizesTotal,
       isActive,
       isFeatured,
       images: images.map((img, index) => ({ url: img.url, order: index })),
+      variants, // vazio remove os tamanhos do produto
     };
 
     setLoading(true);
@@ -347,18 +383,95 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
                 <Field id="productPromoPrice" label="Promocional">
                   <MoneyInput id="productPromoPrice" value={promotionalPrice} onChange={setPromotionalPrice} />
                 </Field>
-                <Field id="productStock" label="Estoque">
+                <Field
+                  id="productStock"
+                  label="Estoque"
+                  hint={sizeGrid !== "none" ? "Soma dos tamanhos." : undefined}
+                >
                   <input
                     id="productStock"
                     type="number"
                     min={0}
                     step={1}
-                    value={stockQuantity}
+                    value={sizeGrid === "none" ? stockQuantity : String(sizesTotal)}
                     onChange={(e) => setStockQuantity(e.target.value)}
-                    className={`${input} tabular-nums`}
+                    readOnly={sizeGrid !== "none"}
+                    className={`${input} tabular-nums read-only:bg-slate-50 read-only:text-on-surface-variant`}
                   />
                 </Field>
               </div>
+            </Section>
+
+            {/* Tamanhos */}
+            <Section title="Tamanhos">
+              <div role="radiogroup" aria-label="Grade de tamanhos" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["none", "Sem tamanho"],
+                    ["clothing", SIZE_GRIDS.clothing.label],
+                    ["numeric", SIZE_GRIDS.numeric.label],
+                  ] as [SizeGrid, string][]
+                ).map(([value, optionLabel]) => (
+                  <label
+                    key={value}
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-body-md transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-primary-container/25 ${
+                      sizeGrid === value
+                        ? "border-primary-container bg-primary-container/5 font-semibold text-primary-container"
+                        : "border-slate-200 text-on-surface hover:bg-surface-container-low"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="sizeGrid"
+                      value={value}
+                      checked={sizeGrid === value}
+                      onChange={() => changeSizeGrid(value)}
+                      className="sr-only"
+                    />
+                    <Ruler size={16} aria-hidden="true" className="shrink-0" />
+                    {optionLabel}
+                  </label>
+                ))}
+              </div>
+
+              {sizeGrid !== "none" && (
+                <>
+                  <p className={hint}>
+                    Digite o estoque de cada tamanho que você vende. Deixe em branco os tamanhos que a loja não
+                    trabalha; use 0 para mostrar o tamanho como esgotado.
+                  </p>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(76px,1fr))] gap-2">
+                    {gridSizes.map((size) => {
+                      const id = `size-${size}`;
+                      const filled = (sizeStock[size] ?? "") !== "";
+                      return (
+                        <div
+                          key={size}
+                          className={`flex flex-col gap-1 rounded-lg border p-2 transition-colors ${
+                            filled ? "border-primary-container/40 bg-primary-container/5" : "border-slate-200"
+                          }`}
+                        >
+                          <label htmlFor={id} className="text-center text-body-md font-bold text-on-surface">
+                            {size}
+                          </label>
+                          <input
+                            id={id}
+                            value={sizeStock[size] ?? ""}
+                            onChange={(e) => setStockForSize(size, e.target.value)}
+                            inputMode="numeric"
+                            placeholder="–"
+                            aria-label={`Estoque do tamanho ${size}`}
+                            className={`${input} px-1! py-1.5! text-center tabular-nums`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-body-sm text-on-surface-variant tabular-nums">
+                    {offeredSizes.length} {offeredSizes.length === 1 ? "tamanho" : "tamanhos"}, {sizesTotal} peças no total
+                  </p>
+                </>
+              )}
             </Section>
 
             {/* Visibilidade */}

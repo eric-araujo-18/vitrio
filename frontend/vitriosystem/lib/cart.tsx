@@ -10,10 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import type { PublicProduct } from "./api_public";
+import type { ProductVariant } from "./api_product";
 import { effectivePrice } from "./format";
 
 export interface CartItem {
+  /** Identifica a linha do carrinho: produto + tamanho. Ver cartItemKey(). */
+  key: string;
   productId: number;
+  variantId: number | null;
+  size: string | null;
   name: string;
   imageUrl: string | null;
   unitPrice: number;
@@ -25,13 +30,33 @@ interface CartContextValue {
   items: CartItem[];
   totalItems: number;
   totalPrice: number;
-  addItem: (product: PublicProduct, quantity?: number) => void;
-  setQuantity: (productId: number, quantity: number) => void;
-  removeItem: (productId: number) => void;
+  /** Para produto com tamanhos, informe a variação escolhida. */
+  addItem: (product: PublicProduct, quantity?: number, variant?: ProductVariant | null) => void;
+  setQuantity: (key: string, quantity: number) => void;
+  removeItem: (key: string) => void;
   clear: () => void;
 }
 
 const CartContext = createContext<CartContextValue | undefined>(undefined);
+
+/** A mesma camisa em M e em G são duas linhas diferentes no carrinho. */
+export function cartItemKey(productId: number, variantId?: number | null) {
+  return `${productId}:${variantId ?? ""}`;
+}
+
+// Carrinhos salvos antes dos tamanhos existirem não têm key/variantId/size.
+function normalize(raw: unknown): CartItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((i) => {
+    const variantId = i.variantId ?? null;
+    return {
+      ...i,
+      variantId,
+      size: i.size ?? null,
+      key: cartItemKey(i.productId, variantId),
+    } as CartItem;
+  });
+}
 
 // Carrinho separado por loja e salvo no navegador do visitante
 // (não é dado sensível: só IDs e quantidades). O preço aqui é só
@@ -45,7 +70,7 @@ export function CartProvider({ storeSlug, children }: { storeSlug: string; child
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      setItems(raw ? (JSON.parse(raw) as CartItem[]) : []);
+      setItems(raw ? normalize(JSON.parse(raw)) : []);
     } catch {
       setItems([]);
     }
@@ -61,45 +86,49 @@ export function CartProvider({ storeSlug, children }: { storeSlug: string; child
     }
   }, [items, hydrated, storageKey]);
 
-  const addItem = useCallback((product: PublicProduct, quantity = 1) => {
-    setItems((prev) => {
-      const existing = prev.find((i) => i.productId === product.id);
-      const max = product.stockQuantity;
+  const addItem = useCallback(
+    (product: PublicProduct, quantity = 1, variant: ProductVariant | null = null) => {
+      const key = cartItemKey(product.id, variant?.id);
+      const max = variant ? variant.stockQuantity : product.stockQuantity;
 
-      if (existing) {
-        return prev.map((i) =>
-          i.productId === product.id
-            ? { ...i, maxQuantity: max, quantity: Math.min(i.quantity + quantity, max) }
-            : i
-        );
-      }
+      setItems((prev) => {
+        const existing = prev.find((i) => i.key === key);
 
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          imageUrl: product.images[0]?.url ?? null,
-          unitPrice: effectivePrice(product),
-          quantity: Math.min(quantity, max),
-          maxQuantity: max,
-        },
-      ];
-    });
-  }, []);
+        if (existing) {
+          return prev.map((i) =>
+            i.key === key ? { ...i, maxQuantity: max, quantity: Math.min(i.quantity + quantity, max) } : i
+          );
+        }
 
-  const setQuantity = useCallback((productId: number, quantity: number) => {
+        return [
+          ...prev,
+          {
+            key,
+            productId: product.id,
+            variantId: variant?.id ?? null,
+            size: variant?.size ?? null,
+            name: product.name,
+            imageUrl: product.images[0]?.url ?? null,
+            unitPrice: effectivePrice(product),
+            quantity: Math.min(quantity, max),
+            maxQuantity: max,
+          },
+        ];
+      });
+    },
+    []
+  );
+
+  const setQuantity = useCallback((key: string, quantity: number) => {
     setItems((prev) =>
       prev
-        .map((i) =>
-          i.productId === productId ? { ...i, quantity: Math.max(0, Math.min(quantity, i.maxQuantity)) } : i
-        )
+        .map((i) => (i.key === key ? { ...i, quantity: Math.max(0, Math.min(quantity, i.maxQuantity)) } : i))
         .filter((i) => i.quantity > 0)
     );
   }, []);
 
-  const removeItem = useCallback((productId: number) => {
-    setItems((prev) => prev.filter((i) => i.productId !== productId));
+  const removeItem = useCallback((key: string) => {
+    setItems((prev) => prev.filter((i) => i.key !== key));
   }, []);
 
   const clear = useCallback(() => setItems([]), []);

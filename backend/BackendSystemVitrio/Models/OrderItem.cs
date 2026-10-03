@@ -13,6 +13,13 @@ namespace BackendSystemVitrio.Models
         public int? ProductId { get; set; }
         public Product? Product { get; set; }
 
+        // Tamanho escolhido (quando o produto tem variações).
+        // Size é uma cópia em texto: o pedido continua mostrando "M" mesmo
+        // se o lojista apagar essa variação depois.
+        public int? VariantId { get; set; }
+        public ProductVariant? Variant { get; set; }
+        public string? Size { get; set; }
+
         public required string ProductName { get; set; }
         public string? ImageUrl { get; set; }
         public decimal UnitPrice { get; set; }

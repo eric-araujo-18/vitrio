@@ -14,6 +14,7 @@ namespace BackendSystemVitrio.Data
         public DbSet<Product> Product { get; set; }
         public DbSet<Category> Category { get; set; }
         public DbSet<ProductImage> ProductImage { get; set; }
+        public DbSet<ProductVariant> ProductVariant { get; set; }
         public DbSet<RefreshToken> RefreshToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
@@ -84,6 +85,22 @@ namespace BackendSystemVitrio.Data
                 .HasForeignKey(p => p.CategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            // ===== ProductVariant =====
+            // Um tamanho não pode se repetir no mesmo produto.
+            modelBuilder.Entity<ProductVariant>()
+                .HasIndex(v => new { v.ProductId, v.Size })
+                .IsUnique();
+
+            modelBuilder.Entity<ProductVariant>()
+                .Property(v => v.Size)
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<ProductVariant>()
+                .HasOne(v => v.Product)
+                .WithMany(p => p.Variants)
+                .HasForeignKey(v => v.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             // ===== RefreshToken =====
             modelBuilder.Entity<RefreshToken>()
                 .HasIndex(rt => rt.Token)
@@ -124,6 +141,18 @@ namespace BackendSystemVitrio.Data
                 .WithMany()
                 .HasForeignKey(i => i.ProductId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Mesma ideia para o tamanho: se a variação for apagada,
+            // o item mantém o texto do tamanho (Size), só perde o vínculo.
+            modelBuilder.Entity<OrderItem>()
+                .HasOne(i => i.Variant)
+                .WithMany()
+                .HasForeignKey(i => i.VariantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<OrderItem>()
+                .Property(i => i.Size)
+                .HasMaxLength(20);
         }
     }
 }

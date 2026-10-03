@@ -34,5 +34,8 @@ namespace BackendSystemVitrio.DTO
         public bool IsFeatured { get; set; }
         public ProductCategoryDto? Category { get; set; }
         public List<ProductImageResponseDto> Images { get; set; } = new();
+
+        // Tamanhos disponíveis (vazio = produto sem tamanho)
+        public List<ProductVariantResponseDto> Variants { get; set; } = new();
     }
 }

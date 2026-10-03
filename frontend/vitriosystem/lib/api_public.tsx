@@ -1,7 +1,7 @@
 // ===== Vitrine pública (sem login) =====
 
 import { request } from "./api";
-import type { ProductCategory, ProductImage } from "./api_product";
+import type { ProductCategory, ProductImage, ProductVariant } from "./api_product";
 
 export interface PublicStore {
   name: string;
@@ -32,6 +32,8 @@ export interface PublicProduct {
   isFeatured: boolean;
   category: ProductCategory | null;
   images: ProductImage[];
+  /** Tamanhos (vazio = produto sem tamanho) */
+  variants: ProductVariant[];
 }
 
 export interface CreateOrderPayload {
@@ -39,7 +41,7 @@ export interface CreateOrderPayload {
   customerPhone: string;
   customerEmail?: string;
   notes?: string;
-  items: { productId: number; quantity: number }[];
+  items: { productId: number; variantId?: number; quantity: number }[];
 }
 
 export interface OrderCreated {
