@@ -10,6 +10,7 @@ using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
 using BackendSystemVitrio.Services.CustomerService;
 using BackendSystemVitrio.Services.SubscriptionService;
+using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.StoreService;
 using BackendSystemVitrio.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -62,6 +63,16 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+
+// ===== Mercado Pago =====
+// Credenciais vêm de "dotnet user-secrets" (desenvolvimento) ou variáveis de ambiente (produção).
+builder.Services.Configure<MercadoPagoOptions>(builder.Configuration.GetSection(MercadoPagoOptions.Section));
+builder.Services.AddHttpClient<IMercadoPagoClient, MercadoPagoClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.mercadopago.com/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddHostedService<SubscriptionMaintenanceService>();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -118,6 +129,19 @@ builder.Services.AddRateLimiter(options =>
             {
                 PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(1),
+            }));
+
+    // Assinar / trocar / cancelar plano: até 6 por 10 minutos por lojista.
+    // Evita criar assinaturas em série no Mercado Pago (cliques repetidos ou abuso).
+    options.AddPolicy("subscription-changes", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
             }));
 
     options.AddPolicy("public-orders", httpContext =>

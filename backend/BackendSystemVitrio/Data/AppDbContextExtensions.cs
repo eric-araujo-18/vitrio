@@ -13,16 +13,19 @@ namespace BackendSystemVitrio.Data
             => context.Store.FirstOrDefaultAsync(s =>
                 s.Id == storeId && s.UserId == userId && s.DeletionDate == null);
 
-        // Plano que vale agora para o lojista. Assinatura em teste, ativa ou com
-        // cobrança atrasada (ainda na tolerância) usa o plano assinado; sem assinatura,
-        // suspensa ou cancelada, volta para o grátis.
+        // Plano que vale agora para o lojista:
+        // - em teste, ativa ou com cobrança atrasada (ainda na tolerância): plano assinado;
+        // - cancelada: plano assinado até o fim do período já pago;
+        // - sem assinatura ou suspensa: grátis.
         public static async Task<Plan> GetEffectivePlanAsync(this AppDbContext context, int userId)
         {
+            var now = DateTime.UtcNow;
             var plan = await context.Subscription
                 .Where(s => s.UserId == userId &&
                             (s.Status == SubscriptionStatus.Trial ||
                              s.Status == SubscriptionStatus.Active ||
-                             s.Status == SubscriptionStatus.PastDue))
+                             s.Status == SubscriptionStatus.PastDue ||
+                             (s.Status == SubscriptionStatus.Canceled && s.CurrentPeriodEnd != null && s.CurrentPeriodEnd > now)))
                 .Select(s => s.Plan)
                 .FirstOrDefaultAsync();
 

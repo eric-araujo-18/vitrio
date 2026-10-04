@@ -18,6 +18,7 @@ namespace BackendSystemVitrio.Data
         public DbSet<CustomerAddress> CustomerAddress { get; set; }
         public DbSet<Plan> Plan { get; set; }
         public DbSet<Subscription> Subscription { get; set; }
+        public DbSet<PaymentWebhookEvent> PaymentWebhookEvent { get; set; }
         public DbSet<RefreshToken> RefreshToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
@@ -176,6 +177,31 @@ namespace BackendSystemVitrio.Data
                     .WithMany()
                     .HasForeignKey(s => s.PlanId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                sub.HasOne(s => s.PendingPlan)
+                    .WithMany()
+                    .HasForeignKey(s => s.PendingPlanId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                sub.HasOne(s => s.ScheduledPlan)
+                    .WithMany()
+                    .HasForeignKey(s => s.ScheduledPlanId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                sub.HasIndex(s => s.PendingGatewaySubscriptionId);
+                sub.Property(s => s.PendingGatewaySubscriptionId).HasMaxLength(100);
+            });
+
+            // ===== PaymentWebhookEvent =====
+            modelBuilder.Entity<PaymentWebhookEvent>(evt =>
+            {
+                evt.HasIndex(e => new { e.Provider, e.NotificationId }).IsUnique();
+                evt.Property(e => e.Provider).HasMaxLength(30);
+                evt.Property(e => e.NotificationId).HasMaxLength(100);
+                evt.Property(e => e.Type).HasMaxLength(60);
+                evt.Property(e => e.Action).HasMaxLength(60);
+                evt.Property(e => e.DataId).HasMaxLength(100);
+                evt.Property(e => e.Error).HasMaxLength(2000);
             });
 
             // ===== Endereço de entrega no pedido =====

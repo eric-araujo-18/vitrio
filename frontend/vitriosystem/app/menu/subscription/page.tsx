@@ -1,26 +1,43 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { Check, CircleAlert, CreditCard, LoaderCircle, Minus } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, CircleAlert, CircleCheck, CreditCard, ExternalLink, LoaderCircle, Minus, TriangleAlert } from "lucide-react";
 import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
 import { unwrap } from "@/lib/api";
 import {
   SUBSCRIPTION_STATUS_LABELS,
+  cancelSubscription,
+  startCheckout,
+  syncSubscription,
   getMySubscription,
-  getPlans,
   type MySubscription,
-  type Plan,
+  type PlanOption,
 } from "@/lib/api_subscription";
 import { formatPrice } from "@/lib/format";
 
 /*
-  Etapa 1 da assinatura: mostra o plano atual, o uso (lojas e produtos) e os planos
-  disponíveis. A cobrança pelo Mercado Pago entra na etapa 2 — até lá o botão de
-  assinar fica desativado e a troca de plano é feita manualmente.
+  Página de assinatura. Ela NÃO decide regra nenhuma: o backend devolve, para cada
+  plano, qual ação é permitida (options[].action) e o texto do botão. Aqui só
+  desenhamos isso. Assim o front nunca oferece uma troca que o backend recusaria.
 */
+
+const GRACE_DAYS = 7; // mesmo valor do backend (SubscriptionService.GraceDays)
 
 const card =
   "rounded-2xl border border-slate-200/85 bg-white p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.03),0_4px_12px_-2px_rgba(15,23,42,0.05)] sm:p-6";
+
+const primaryBtn =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-container px-4 text-label-md font-semibold text-on-primary transition-colors hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50";
+
+const secondaryBtn =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-label-md font-semibold text-on-surface transition-colors hover:border-slate-300 hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50";
+
+const tag =
+  "inline-flex min-h-10 items-center justify-center rounded-lg bg-surface-container-low px-3 py-2 text-center text-label-md font-semibold text-on-surface-variant";
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 export default function SubscriptionPage() {
   return (
@@ -32,16 +49,26 @@ export default function SubscriptionPage() {
 
 function SubscriptionContent() {
   const [mine, setMine] = useState<MySubscription | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // código do plano em ação, ou "cancel" / "sync"
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [waitingPayment, setWaitingPayment] = useState(false);
+  const pollCount = useRef(0);
 
+  // Ao abrir: confere no Mercado Pago (pega, por ex., cancelamento feito direto no app deles).
   useEffect(() => {
     let active = true;
-    Promise.all([unwrap(getMySubscription()), unwrap(getPlans())])
-      .then(([m, p]) => {
+    unwrap(syncSubscription(false))
+      .catch(() => unwrap(getMySubscription()))
+      .then((data) => {
         if (!active) return;
-        setMine(m);
-        setPlans(p);
+        setMine(data);
+        // Voltou do checkout (o back_url traz ?preapproval_id=...)
+        if (new URLSearchParams(window.location.search).has("preapproval_id")) {
+          if (data.pendingPlan) setWaitingPayment(true);
+          else window.history.replaceState(null, "", window.location.pathname);
+        }
       })
       .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar a assinatura."));
     return () => {
@@ -49,17 +76,95 @@ function SubscriptionContent() {
     };
   }, []);
 
-  if (error) {
-    return (
-      <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-body-md text-red-700">
-        <CircleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
-        {error}
-      </p>
-    );
+  // Depois do checkout: confere a cada 5s por até 1 minuto.
+  useEffect(() => {
+    if (!waitingPayment) return;
+    pollCount.current = 0;
+    const timer = setInterval(async () => {
+      pollCount.current += 1;
+      try {
+        const data = await unwrap(syncSubscription(true));
+        setMine(data);
+        if (!data.pendingPlan) {
+          setWaitingPayment(false);
+          setNotice(`Pagamento confirmado! Seu plano agora é ${data.plan.name}.`);
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+      } catch {
+        // tenta de novo no próximo ciclo
+      }
+      if (pollCount.current >= 12) setWaitingPayment(false);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [waitingPayment]);
+
+  function startAction(key: string) {
+    setError(null);
+    setNotice(null);
+    setBusy(key);
+  }
+
+  async function handleOption(option: PlanOption) {
+    if (option.action === "CancelToFree") {
+      setConfirmCancel(true);
+      document.getElementById("cancel-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    startAction(option.plan.code);
+    try {
+      const res = await startCheckout(option.plan.code);
+      if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Não foi possível trocar de plano.");
+
+      if (res.dados.checkoutUrl) {
+        window.location.href = res.dados.checkoutUrl; // vai pagar no Mercado Pago
+        return;
+      }
+      setMine(await unwrap(getMySubscription()));
+      setNotice(res.mensagem ?? "Plano atualizado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível trocar de plano.");
+    }
+    setBusy(null);
+  }
+
+  async function handleSync() {
+    startAction("sync");
+    try {
+      const data = await unwrap(syncSubscription(true));
+      setMine(data);
+      setNotice(
+        data.pendingPlan
+          ? "O Mercado Pago ainda não confirmou o pagamento. Se você acabou de pagar, aguarde um pouco e tente de novo."
+          : `Tudo certo! Seu plano é ${data.plan.name}.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível verificar o pagamento.");
+    }
+    setBusy(null);
+  }
+
+  async function handleCancel() {
+    startAction("cancel");
+    try {
+      const data = await unwrap(cancelSubscription());
+      setMine(data);
+      setConfirmCancel(false);
+      setNotice(
+        data.currentPeriodEnd
+          ? `Assinatura cancelada. Seu plano continua valendo até ${formatDate(data.currentPeriodEnd)}.`
+          : "Assinatura cancelada."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível cancelar.");
+    }
+    setBusy(null);
   }
 
   if (!mine) {
-    return (
+    return error ? (
+      <Banner tone="error">{error}</Banner>
+    ) : (
       <div role="status" className="flex items-center gap-2 text-body-md text-on-surface-variant">
         <LoaderCircle size={18} aria-hidden="true" className="animate-spin text-primary-container" />
         Carregando...
@@ -68,9 +173,65 @@ function SubscriptionContent() {
   }
 
   const { plan } = mine;
+  const periodEnd = mine.currentPeriodEnd ? formatDate(mine.currentPeriodEnd) : null;
+  const canceledInPeriod =
+    mine.status === "Canceled" && !!mine.currentPeriodEnd && new Date(mine.currentPeriodEnd) > new Date();
+  const graceEnds = mine.pastDueSince
+    ? formatDate(new Date(new Date(mine.pastDueSince).getTime() + GRACE_DAYS * 86_400_000).toISOString())
+    : null;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
+      {/* Avisos */}
+      <div aria-live="polite" className="flex flex-col gap-3 empty:hidden">
+        {error && <Banner tone="error">{error}</Banner>}
+        {notice && <Banner tone="success">{notice}</Banner>}
+        {waitingPayment ? (
+          <Banner tone="info">
+            <LoaderCircle size={16} aria-hidden="true" className="mr-1.5 inline animate-spin" />
+            Confirmando seu pagamento com o Mercado Pago. Isso costuma levar alguns segundos.
+          </Banner>
+        ) : (
+          mine.pendingPlan && (
+            <Banner tone="info">
+              Há um pagamento do plano {mine.pendingPlan.name} aguardando confirmação. Enquanto isso, você continua no{" "}
+              {plan.name}.{" "}
+              <button
+                type="button"
+                onClick={handleSync}
+                disabled={busy !== null}
+                className="font-semibold underline underline-offset-2 hover:no-underline disabled:opacity-60"
+              >
+                {busy === "sync" ? "Verificando..." : "Já paguei, verificar agora"}
+              </button>
+            </Banner>
+          )
+        )}
+        {mine.scheduledPlan && periodEnd && (
+          <Banner tone="info">
+            Seu plano muda para {mine.scheduledPlan.name} em {periodEnd}. Até lá, você continua com o {plan.name}.
+          </Banner>
+        )}
+        {mine.status === "PastDue" && graceEnds && (
+          <Banner tone="warning">
+            Não conseguimos cobrar sua mensalidade. Regularize o pagamento no Mercado Pago até {graceEnds} para não
+            voltar ao plano Grátis. Até lá, não é possível trocar de plano.
+          </Banner>
+        )}
+        {mine.status === "Suspended" && (
+          <Banner tone="error">
+            Sua assinatura foi suspensa por falta de pagamento e você voltou ao plano Grátis. Suas lojas e produtos
+            continuam salvos; assine de novo para recuperar os limites.
+          </Banner>
+        )}
+        {canceledInPeriod && periodEnd && (
+          <Banner tone="info">
+            Assinatura cancelada. O plano {plan.name} vale até {periodEnd}; depois disso você volta ao Grátis e pode
+            assinar qualquer plano. Antes dessa data, só é possível fazer upgrade.
+          </Banner>
+        )}
+      </div>
+
       {/* Plano atual + uso */}
       <section className={card} aria-labelledby="current-plan">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -81,7 +242,8 @@ function SubscriptionContent() {
             </h2>
             <p className="mt-1 text-body-md text-on-surface-variant">
               {plan.priceMonthly > 0 ? `${formatPrice(plan.priceMonthly)} por mês` : "Sem custo"}
-              {mine.status && `, assinatura ${SUBSCRIPTION_STATUS_LABELS[mine.status].toLowerCase()}`}
+              {mine.status && plan.priceMonthly > 0 && `, assinatura ${SUBSCRIPTION_STATUS_LABELS[mine.status].toLowerCase()}`}
+              {mine.status === "Active" && periodEnd && `, próxima cobrança em ${periodEnd}`}
             </p>
           </div>
           <CreditCard size={28} aria-hidden="true" className="text-primary-container" />
@@ -90,19 +252,14 @@ function SubscriptionContent() {
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <UsageBar label="Lojas" used={mine.storeCount} limit={plan.maxStores} />
           {mine.stores.map((s) => (
-            <UsageBar
-              key={s.storeId}
-              label={`Produtos em ${s.storeName}`}
-              used={s.productCount}
-              limit={plan.maxProductsPerStore}
-            />
+            <UsageBar key={s.storeId} label={`Produtos em ${s.storeName}`} used={s.productCount} limit={plan.maxProductsPerStore} />
           ))}
         </div>
 
         {mine.storeCount > plan.maxStores && (
           <p className="mt-5 rounded-lg bg-amber-500/10 px-3 py-2.5 text-body-sm text-amber-800">
-            Você tem mais lojas do que o plano atual permite. Elas continuam funcionando, mas não dá para criar
-            novas até voltar ao limite.
+            Você tem mais lojas do que o plano atual permite. Elas continuam funcionando, mas não dá para criar novas
+            até voltar ao limite.
           </p>
         )}
       </section>
@@ -113,8 +270,11 @@ function SubscriptionContent() {
           Planos
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
-          {plans.map((p) => {
+          {mine.options.map((option) => {
+            const p = option.plan;
+            const isFree = p.priceMonthly <= 0;
             const isCurrent = p.id === plan.id;
+
             return (
               <article
                 key={p.id}
@@ -124,9 +284,9 @@ function SubscriptionContent() {
                 {p.description && <p className="mt-1 text-body-sm text-on-surface-variant">{p.description}</p>}
                 <p className="mt-4 text-on-surface">
                   <span className="text-headline-sm font-extrabold tabular-nums">
-                    {p.priceMonthly > 0 ? formatPrice(p.priceMonthly) : "Grátis"}
+                    {isFree ? "Grátis" : formatPrice(p.priceMonthly)}
                   </span>
-                  {p.priceMonthly > 0 && <span className="text-body-sm text-on-surface-variant"> /mês</span>}
+                  {!isFree && <span className="text-body-sm text-on-surface-variant"> /mês</span>}
                 </p>
 
                 <ul className="mt-5 flex flex-1 flex-col gap-2.5 text-body-md text-on-surface">
@@ -134,35 +294,123 @@ function SubscriptionContent() {
                     {p.maxStores} {p.maxStores === 1 ? "loja" : "lojas"}
                   </Feature>
                   <Feature ok>
-                    {p.maxProductsPerStore === null
-                      ? "Produtos ilimitados"
-                      : `Até ${p.maxProductsPerStore} produtos por loja`}
+                    {p.maxProductsPerStore === null ? "Produtos ilimitados" : `Até ${p.maxProductsPerStore} produtos por loja`}
                   </Feature>
                   <Feature ok={p.allowsOnlinePayment}>Pagamento online (Pix e cartão)</Feature>
                 </ul>
 
-                {isCurrent ? (
-                  <span className="mt-6 inline-flex h-10 items-center justify-center rounded-lg bg-surface-container-low text-label-md font-semibold text-on-surface-variant">
-                    Plano atual
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    title="O pagamento pelo Mercado Pago chega na próxima etapa"
-                    className="mt-6 inline-flex h-10 items-center justify-center rounded-lg bg-primary-container text-label-md font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Em breve
-                  </button>
-                )}
+                <div className="mt-6 flex flex-col gap-2">
+                  <OptionButton
+                    option={option}
+                    isCurrent={isCurrent}
+                    busy={busy === p.code}
+                    disabled={busy !== null}
+                    onClick={() => handleOption(option)}
+                  />
+                </div>
               </article>
             );
           })}
         </div>
         <p className="mt-4 text-body-sm text-on-surface-variant">
-          A assinatura pelo Mercado Pago está chegando. Até lá, fale com o suporte para trocar de plano.
+          O pagamento é feito no Mercado Pago, com renovação automática todo mês. Upgrade: o plano novo é liberado assim
+          que o pagamento for confirmado. Plano menor: a troca vale a partir da próxima cobrança.
         </p>
       </section>
+
+      {/* Cancelar */}
+      {mine.canCancel && (
+        <section className={card} aria-labelledby="cancel-title">
+          <h2 id="cancel-title" className="text-title-md font-bold text-on-surface">
+            Cancelar assinatura
+          </h2>
+          <p className="mt-1 text-body-md text-on-surface-variant">
+            As cobranças param{periodEnd ? ` e o plano continua valendo até ${periodEnd}` : ""}. Depois disso você volta ao
+            Grátis, sem perder lojas nem produtos. O cancelamento é definitivo: até essa data, só será possível fazer
+            upgrade.
+          </p>
+          {confirmCancel ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span className="text-body-md font-semibold text-on-surface">Confirmar o cancelamento?</span>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={busy !== null}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 text-label-md font-semibold text-red-600 hover:bg-red-100 disabled:opacity-60"
+              >
+                {busy === "cancel" && <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />}
+                Sim, cancelar
+              </button>
+              <button type="button" onClick={() => setConfirmCancel(false)} disabled={busy !== null} className={secondaryBtn}>
+                Manter assinatura
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirmCancel(true)} className={`${secondaryBtn} mt-4`}>
+              Cancelar assinatura
+            </button>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** Desenha exatamente a ação que o backend permitiu para o plano. */
+function OptionButton({
+  option,
+  isCurrent,
+  busy,
+  disabled,
+  onClick,
+}: {
+  option: PlanOption;
+  isCurrent: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const spinner = busy && <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />;
+
+  switch (option.action) {
+    case "Checkout":
+      return (
+        <button type="button" onClick={onClick} disabled={disabled} className={primaryBtn}>
+          {spinner || <ExternalLink size={16} aria-hidden="true" />}
+          {option.label}
+        </button>
+      );
+    case "ScheduleDowngrade":
+    case "KeepCurrent":
+    case "CancelToFree":
+      return (
+        <>
+          {isCurrent && <span className={tag}>Plano atual</span>}
+          <button type="button" onClick={onClick} disabled={disabled} className={secondaryBtn}>
+            {spinner}
+            {option.label}
+          </button>
+        </>
+      );
+    default:
+      // Current / Unavailable: só a etiqueta, sem ação
+      return <span className={tag}>{option.label}</span>;
+  }
+}
+
+function Banner({ tone, children }: { tone: "error" | "success" | "info" | "warning"; children: ReactNode }) {
+  const styles = {
+    error: "border-red-200 bg-red-50 text-red-700",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    info: "border-blue-200 bg-blue-50 text-blue-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+  }[tone];
+  const Icon = tone === "success" ? CircleCheck : tone === "warning" ? TriangleAlert : CircleAlert;
+
+  return (
+    <div role={tone === "error" ? "alert" : "status"} className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-body-md ${styles}`}>
+      {tone !== "info" && <Icon size={18} aria-hidden="true" className="mt-px shrink-0" />}
+      <span>{children}</span>
     </div>
   );
 }

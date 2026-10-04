@@ -3,6 +3,7 @@ using System;
 using BackendSystemVitrio.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BackendSystemVitrio.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261004013937_MercadoPagoSubscriptions")]
+    partial class MercadoPagoSubscriptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -661,23 +664,13 @@ namespace BackendSystemVitrio.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<DateTime?>("LastSyncedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime?>("PastDueSince")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PendingGatewaySubscriptionId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
 
                     b.Property<int?>("PendingPlanId")
                         .HasColumnType("integer");
 
                     b.Property<int>("PlanId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("ScheduledPlanId")
                         .HasColumnType("integer");
 
                     b.Property<int>("Status")
@@ -696,13 +689,9 @@ namespace BackendSystemVitrio.Migrations
 
                     b.HasIndex("GatewaySubscriptionId");
 
-                    b.HasIndex("PendingGatewaySubscriptionId");
-
                     b.HasIndex("PendingPlanId");
 
                     b.HasIndex("PlanId");
-
-                    b.HasIndex("ScheduledPlanId");
 
                     b.HasIndex("UserId")
                         .IsUnique();
@@ -907,11 +896,6 @@ namespace BackendSystemVitrio.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("BackendSystemVitrio.Models.Plan", "ScheduledPlan")
-                        .WithMany()
-                        .HasForeignKey("ScheduledPlanId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("BackendSystemVitrio.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -921,8 +905,6 @@ namespace BackendSystemVitrio.Migrations
                     b.Navigation("PendingPlan");
 
                     b.Navigation("Plan");
-
-                    b.Navigation("ScheduledPlan");
 
                     b.Navigation("User");
                 });
