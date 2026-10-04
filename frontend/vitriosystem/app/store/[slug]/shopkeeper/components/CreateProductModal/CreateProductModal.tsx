@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import {
   Eye,
   ImagePlus,
@@ -154,7 +154,40 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
     };
   }, [storeId, product]);
 
-  const linkOptions = storeProducts.filter((p) => p.id !== product?.id);
+  // Opções do "Mesma peça que": cada grupo de cores aparece UMA vez só (basta ligar
+  // a qualquer produto do grupo, o backend coloca este produto no grupo inteiro).
+  // O representante do grupo é o primeiro produto dele na lista, o mesmo que a
+  // pré-seleção acima escolhe ao editar, então o select já abre marcado.
+  const linkOptions = useMemo(() => {
+    const groups: { id: number; label: string }[] = [];
+    const singles: { id: number; label: string }[] = [];
+    const seenGroups = new Map<string, { id: number; name: string; colors: string[] }>();
+
+    for (const p of storeProducts) {
+      if (p.id === product?.id) continue;
+
+      if (!p.colorGroupId) {
+        singles.push({ id: p.id, label: p.colorName ? `${p.name} (${p.colorName})` : p.name });
+        continue;
+      }
+
+      const group = seenGroups.get(p.colorGroupId);
+      if (group) {
+        if (p.colorName) group.colors.push(p.colorName);
+      } else {
+        seenGroups.set(p.colorGroupId, { id: p.id, name: p.name, colors: p.colorName ? [p.colorName] : [] });
+      }
+    }
+
+    for (const g of seenGroups.values()) {
+      const shown = g.colors.slice(0, 4).join(", ");
+      const extra = g.colors.length > 4 ? ` +${g.colors.length - 4}` : "";
+      groups.push({ id: g.id, label: g.colors.length ? `${g.name} (${shown}${extra})` : g.name });
+    }
+
+    const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label, "pt-BR");
+    return { groups: groups.sort(byLabel), singles: singles.sort(byLabel) };
+  }, [storeProducts, product?.id]);
 
   // Fecha com Esc
   useEffect(() => {
@@ -599,12 +632,24 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
                   className={input}
                 >
                   <option value="">Nenhuma (produto sem outras cores)</option>
-                  {linkOptions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.colorName ? ` (${p.colorName})` : ""}
-                    </option>
-                  ))}
+                  {linkOptions.groups.length > 0 && (
+                    <optgroup label="Peças que já têm outras cores">
+                      {linkOptions.groups.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {linkOptions.singles.length > 0 && (
+                    <optgroup label="Outros produtos">
+                      {linkOptions.singles.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </Field>
             </Section>

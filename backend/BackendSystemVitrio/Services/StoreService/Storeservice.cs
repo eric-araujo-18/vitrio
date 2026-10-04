@@ -61,6 +61,14 @@ namespace BackendSystemVitrio.Services.StoreService
 
                 var name = dto.Name.Trim();
 
+                // Limite de lojas do plano (lojas excluídas não contam).
+                var plan = await _context.GetEffectivePlanAsync(userId);
+                var storeCount = await _context.Store.CountAsync(s => s.UserId == userId && s.DeletionDate == null);
+                if (storeCount >= plan.MaxStores)
+                    return Response<StoreDto>.Fail(
+                        $"Seu plano {plan.Name} permite até {plan.MaxStores} {(plan.MaxStores == 1 ? "loja" : "lojas")}. " +
+                        "Veja os planos em Assinatura para criar mais.");
+
                 var normalizedCnpj = SlugHelper.OnlyDigits(dto.Cnpj);
                 if (normalizedCnpj is not null)
                 {

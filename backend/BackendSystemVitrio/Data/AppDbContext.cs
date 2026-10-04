@@ -16,6 +16,8 @@ namespace BackendSystemVitrio.Data
         public DbSet<ProductImage> ProductImage { get; set; }
         public DbSet<ProductVariant> ProductVariant { get; set; }
         public DbSet<CustomerAddress> CustomerAddress { get; set; }
+        public DbSet<Plan> Plan { get; set; }
+        public DbSet<Subscription> Subscription { get; set; }
         public DbSet<RefreshToken> RefreshToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
@@ -108,6 +110,73 @@ namespace BackendSystemVitrio.Data
 
             modelBuilder.Entity<Order>()
                 .HasIndex(o => o.CustomerUserId);
+
+            // ===== Plan =====
+            modelBuilder.Entity<Plan>(plan =>
+            {
+                plan.HasIndex(p => p.Code).IsUnique();
+                plan.Property(p => p.Code).HasMaxLength(30);
+                plan.Property(p => p.Name).HasMaxLength(60);
+                plan.Property(p => p.Description).HasMaxLength(300);
+                plan.Property(p => p.PriceMonthly).HasPrecision(10, 2);
+
+                // Planos iniciais. Para mudar preço/limite: altere aqui e gere uma migration.
+                plan.HasData(
+                    new Plan
+                    {
+                        Id = Models.Plan.FreeId,
+                        Code = "free",
+                        Name = "Grátis",
+                        Description = "Para começar a vender.",
+                        PriceMonthly = 0m,
+                        MaxStores = 1,
+                        MaxProductsPerStore = 30,
+                        AllowsOnlinePayment = false,
+                        SortOrder = 0,
+                    },
+                    new Plan
+                    {
+                        Id = 2,
+                        Code = "basic",
+                        Name = "Essencial",
+                        Description = "Para a loja que já vende todo dia.",
+                        PriceMonthly = 29.90m,
+                        MaxStores = 1,
+                        MaxProductsPerStore = 300,
+                        AllowsOnlinePayment = true,
+                        SortOrder = 1,
+                    },
+                    new Plan
+                    {
+                        Id = 3,
+                        Code = "pro",
+                        Name = "Profissional",
+                        Description = "Para quem tem mais de uma loja.",
+                        PriceMonthly = 59.90m,
+                        MaxStores = 3,
+                        MaxProductsPerStore = null,
+                        AllowsOnlinePayment = true,
+                        SortOrder = 2,
+                    });
+            });
+
+            // ===== Subscription =====
+            modelBuilder.Entity<Subscription>(sub =>
+            {
+                sub.HasIndex(s => s.UserId).IsUnique(); // uma assinatura por lojista
+                sub.HasIndex(s => s.GatewaySubscriptionId);
+                sub.Property(s => s.GatewaySubscriptionId).HasMaxLength(100);
+
+                sub.HasOne(s => s.User)
+                    .WithMany()
+                    .HasForeignKey(s => s.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                sub.HasOne(s => s.Plan)
+                    .WithMany()
+                    .HasForeignKey(s => s.PlanId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
 
             // ===== Endereço de entrega no pedido =====
             modelBuilder.Entity<Order>(order =>

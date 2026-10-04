@@ -73,6 +73,18 @@ namespace BackendSystemVitrio.Services.ProductService
                 if (store is null)
                     return Response<ProductResponseDto>.Fail("Loja não encontrada.");
 
+                // Limite de produtos por loja do plano (null = ilimitado; excluídos não contam).
+                var plan = await _context.GetEffectivePlanAsync(userId);
+                if (plan.MaxProductsPerStore.HasValue)
+                {
+                    var productCount = await _context.Product
+                        .CountAsync(p => p.StoreId == store.Id && p.DeletionDate == null);
+                    if (productCount >= plan.MaxProductsPerStore.Value)
+                        return Response<ProductResponseDto>.Fail(
+                            $"Seu plano {plan.Name} permite até {plan.MaxProductsPerStore.Value} produtos por loja. " +
+                            "Veja os planos em Assinatura para cadastrar mais.");
+                }
+
                 var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
                                       ?? ValidateVariants(dto.Variants)
                                       ?? ValidateColor(dto.ColorName, dto.ColorHex, dto.ColorLinkedProductId);
