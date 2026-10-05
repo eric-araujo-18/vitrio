@@ -6,6 +6,7 @@ using BackendSystemVitrio.Data;
 using BackendSystemVitrio.Middlewares;
 using BackendSystemVitrio.Services.AuthService;
 using BackendSystemVitrio.Services.CategoryService;
+using BackendSystemVitrio.Services.Cleanup;
 using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
@@ -89,6 +90,17 @@ builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
 builder.Services.AddSingleton<EmailQueue>();
 builder.Services.AddHostedService<EmailBackgroundSender>();
 
+// ===== Limpeza periódica (registros vencidos e imagens sem uso no Cloudinary) =====
+// Sem Cloudinary:CloudName/ApiKey/ApiSecret, só a limpeza do banco roda.
+builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.Section));
+builder.Services.AddScoped<DatabaseCleanup>();
+builder.Services.AddHttpClient<CloudinaryCleanup>(client =>
+{
+    client.BaseAddress = new Uri("https://api.cloudinary.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHostedService<CleanupService>();
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -170,6 +182,20 @@ builder.Services.AddRateLimiter(options =>
             {
                 PermitLimit = 6,
                 Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+
+    // Conferir a assinatura no Mercado Pago: até 30 por minuto por lojista. A página de
+    // assinatura chama a cada 5s logo depois do checkout, bem abaixo disso; o limite só
+    // barra chamadas em série (cada uma pode virar uma consulta ao Mercado Pago).
+    options.AddPolicy("subscription-sync", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
 

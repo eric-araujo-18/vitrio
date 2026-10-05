@@ -52,19 +52,20 @@ namespace BackendSystemVitrio.Controllers
             {
                 // corpo vazio/inválido: segue só com o que veio na URL
             }
-            var hasBody = body.ValueKind == JsonValueKind.Object;
-
             // data.id e type vêm na URL; o corpo tem os mesmos dados (e o id da notificação).
+            // O corpo é lido com cuidado: um campo com tipo inesperado (ex.: "data" que não é
+            // objeto) vira "ausente", em vez de lançar exceção e responder 500 (o que faria o
+            // Mercado Pago reenviar a mesma notificação várias vezes).
             string? dataId = Request.Query["data.id"];
             string? type = Request.Query["type"];
 
-            if (hasBody && string.IsNullOrEmpty(dataId) && body.TryGetProperty("data", out var data) && data.TryGetProperty("id", out var idProp))
-                dataId = idProp.ToString();
-            if (hasBody && string.IsNullOrEmpty(type) && body.TryGetProperty("type", out var typeProp))
-                type = typeProp.GetString();
+            if (string.IsNullOrEmpty(dataId) && TryGetProperty(body, "data", out var data))
+                dataId = ReadScalar(data, "id");
+            if (string.IsNullOrEmpty(type))
+                type = ReadScalar(body, "type");
 
-            var action = hasBody && body.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : null;
-            var notificationId = hasBody && body.TryGetProperty("id", out var notifProp) ? notifProp.ToString() : null;
+            var action = ReadScalar(body, "action");
+            var notificationId = ReadScalar(body, "id");
             var requestId = Request.Headers["x-request-id"].ToString();
 
             _logger.LogInformation("Webhook do Mercado Pago recebido: type={Type} action={Action} data.id={DataId}", type, action, dataId);
@@ -145,6 +146,25 @@ namespace BackendSystemVitrio.Controllers
                 await _context.SaveChangesAsync();
                 return StatusCode(StatusCodes.Status500InternalServerError);
             }
+        }
+
+        private static bool TryGetProperty(JsonElement obj, string name, out JsonElement value)
+        {
+            value = default;
+            return obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(name, out value);
+        }
+
+        // Texto ou número; qualquer outro tipo (objeto, lista, null...) conta como ausente.
+        private static string? ReadScalar(JsonElement obj, string name)
+        {
+            if (!TryGetProperty(obj, name, out var value))
+                return null;
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.GetRawText(),
+                _ => null,
+            };
         }
     }
 }

@@ -37,6 +37,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
         // Com checkout pendente o lojista está esperando a confirmação: confere com mais frequência.
         private static readonly TimeSpan PendingSyncInterval = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan IdleSyncInterval = TimeSpan.FromMinutes(1);
+        // Botão "Já paguei" e conferência rápida depois do checkout (a página chama a cada 5s).
+        private static readonly TimeSpan ForcedSyncInterval = TimeSpan.FromSeconds(3);
 
         private readonly AppDbContext _context;
         private readonly IMercadoPagoClient _mercadoPago;
@@ -78,7 +80,9 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             {
                 if (hasActive || pastDue) return new(PlanAction.CancelToFree, "Voltar ao Grátis");
                 if (canceledInPeriod) return new(PlanAction.Unavailable, $"Começa em {until}");
-                return new(PlanAction.Current, "Plano atual");
+                if (isCurrent) return new(PlanAction.Current, "Plano atual");
+                // Plano pago sem cobrança, definido pelo Admin (AdminSetPlanAsync)
+                return new(PlanAction.Unavailable, "Fale com o suporte");
             }
 
             // Pagamento já aberto para este plano
@@ -110,6 +114,9 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                 if (target.PriceMonthly > effective.PriceMonthly) return new(PlanAction.Checkout, "Fazer upgrade");
                 return new(PlanAction.Unavailable, $"Disponível a partir de {until}");
             }
+
+            // Plano pago sem cobrança, definido pelo Admin: é o atual, não precisa assinar.
+            if (isCurrent) return new(PlanAction.Current, "Plano atual");
 
             // No grátis (nunca assinou, suspensa ou período encerrado)
             return new(PlanAction.Checkout, "Assinar");
@@ -321,10 +328,13 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                     .Select(s => new { s.GatewaySubscriptionId, s.PendingGatewaySubscriptionId, s.LastSyncedAt })
                     .FirstOrDefaultAsync();
 
-                var interval = sub?.PendingGatewaySubscriptionId is not null ? PendingSyncInterval : IdleSyncInterval;
+                // force encurta o intervalo, mas não zera: cliques ou chamadas em série não viram
+                // uma consulta ao Mercado Pago cada (o limite de requisições fica no controller).
+                var interval = force ? ForcedSyncInterval
+                    : sub?.PendingGatewaySubscriptionId is not null ? PendingSyncInterval : IdleSyncInterval;
                 var recentlySynced = sub?.LastSyncedAt is not null && sub.LastSyncedAt > DateTime.UtcNow - interval;
 
-                if (sub is not null && (force || !recentlySynced))
+                if (sub is not null && !recentlySynced)
                 {
                     if (sub.PendingGatewaySubscriptionId is not null)
                         await SyncPreapprovalAsync(sub.PendingGatewaySubscriptionId);
@@ -407,11 +417,23 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                     _context.Subscription.Add(sub);
                 }
 
-                // Troca manual: não mexe no Mercado Pago.
+                // Troca manual = plano sem cobrança, que vale até o Admin mudar de novo.
+                // A cobrança no Mercado Pago (e o pagamento aberto, se houver) precisa ser cancelada:
+                // senão o lojista continuaria pagando, e a próxima conferência ou webhook trocaria
+                // o plano de volta. Se o Mercado Pago falhar, nada muda aqui e o Admin tenta de novo.
+                foreach (var gatewayId in new[] { sub.GatewaySubscriptionId, sub.PendingGatewaySubscriptionId })
+                {
+                    if (gatewayId is not null && !await EnsureCanceledAtGatewayAsync(gatewayId))
+                        return Response<MySubscriptionDto>.Fail(
+                            "Não foi possível cancelar a cobrança no Mercado Pago. O plano não foi alterado; tente de novo em instantes.");
+                }
+
                 sub.PlanId = plan.Id;
+                sub.GatewaySubscriptionId = null;
                 ClearPending(sub);
                 sub.ScheduledPlanId = null;
                 sub.Status = SubscriptionStatus.Active;
+                sub.CurrentPeriodEnd = null;
                 sub.PastDueSince = null;
                 sub.CanceledAt = null;
                 sub.UpdatedDate = DateTime.UtcNow;
@@ -799,6 +821,28 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                 _logger.LogWarning(ex, "Não foi possível cancelar a assinatura {Id} no Mercado Pago", gatewayId);
                 return false;
             }
+        }
+
+        // Como TryCancelAtGatewayAsync, mas confere antes: uma assinatura que já está cancelada
+        // no Mercado Pago (ex.: o lojista cancelou e ainda está no período pago) conta como feita.
+        private async Task<bool> EnsureCanceledAtGatewayAsync(string gatewayId)
+        {
+            try
+            {
+                if ((await _mercadoPago.GetPreapprovalAsync(gatewayId)).Status == "cancelled")
+                    return true;
+            }
+            catch (MercadoPagoException ex) when (ex.StatusCode == StatusCodes.Status404NotFound)
+            {
+                return true; // não existe mais no Mercado Pago
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Não foi possível consultar a assinatura {Id} no Mercado Pago", gatewayId);
+                return false;
+            }
+
+            return await TryCancelAtGatewayAsync(gatewayId);
         }
 
         private static readonly Expression<Func<Plan, PlanDto>> ToPlanDto = p => new PlanDto

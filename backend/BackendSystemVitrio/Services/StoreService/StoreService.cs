@@ -81,12 +81,12 @@ namespace BackendSystemVitrio.Services.StoreService
                     if (normalizedCnpj.Length != 14)
                         return Response<StoreDto>.Fail("CNPJ inválido.");
 
-                    if (await _context.Store.AnyAsync(s => s.Cnpj == normalizedCnpj))
+                    if (await _context.Store.AnyAsync(s => s.Cnpj == normalizedCnpj && s.DeletionDate == null))
                         return Response<StoreDto>.Fail("CNPJ já cadastrado.");
                 }
 
-                if (await _context.Store.AnyAsync(s => s.Name == name))
-                    return Response<StoreDto>.Fail("Nome da loja já cadastrado.");
+                if (await NameInUseAsync(userId, name, exceptStoreId: null))
+                    return Response<StoreDto>.Fail("Você já tem uma loja com esse nome.");
 
                 var colorError = ValidateColors(dto.PrimaryColor, dto.SecondaryColor, dto.TertiaryColor);
                 if (colorError is not null)
@@ -132,9 +132,8 @@ namespace BackendSystemVitrio.Services.StoreService
                     if (name.Length == 0)
                         return Response<StoreDto>.Fail("O nome da loja não pode ficar vazio.");
 
-                    if (name != store.Name &&
-                        await _context.Store.AnyAsync(s => s.Name == name && s.Id != store.Id))
-                        return Response<StoreDto>.Fail("Nome da loja já cadastrado.");
+                    if (name != store.Name && await NameInUseAsync(userId, name, exceptStoreId: store.Id))
+                        return Response<StoreDto>.Fail("Você já tem uma loja com esse nome.");
 
                     // O slug NÃO muda ao renomear: links já compartilhados continuam funcionando.
                     store.Name = name;
@@ -148,7 +147,7 @@ namespace BackendSystemVitrio.Services.StoreService
                         if (cnpj.Length != 14)
                             return Response<StoreDto>.Fail("CNPJ inválido.");
 
-                        if (await _context.Store.AnyAsync(s => s.Cnpj == cnpj && s.Id != store.Id))
+                        if (await _context.Store.AnyAsync(s => s.Cnpj == cnpj && s.Id != store.Id && s.DeletionDate == null))
                             return Response<StoreDto>.Fail("CNPJ já cadastrado.");
                     }
                     store.Cnpj = cnpj;
@@ -294,6 +293,15 @@ namespace BackendSystemVitrio.Services.StoreService
         }
 
         // ===== Helpers =====
+
+        // O nome só se repete entre lojas do mesmo lojista que não foram excluídas
+        // (mesma regra do índice). Ignora maiúsculas/minúsculas: "Loja" e "loja" contam como iguais.
+        private Task<bool> NameInUseAsync(int userId, string name, int? exceptStoreId)
+        {
+            var lower = name.ToLower();
+            return _context.Store.AnyAsync(s =>
+                s.UserId == userId && s.DeletionDate == null && s.Id != exceptStoreId && s.Name.ToLower() == lower);
+        }
 
         private async Task<string> GenerateUniqueSlugAsync(string name)
         {

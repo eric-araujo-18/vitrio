@@ -18,14 +18,15 @@ namespace BackendSystemVitrio.Services.SubscriptionService
         Task<Response<MySubscriptionDto>> CancelAsync(int userId);
 
         // Confere a assinatura do lojista no Mercado Pago agora.
-        // force = false: pula se já conferiu há menos de 1 minuto (usado ao abrir a página).
+        // force = false: pula se já conferiu há pouco (10s com checkout pendente, 1 min sem).
+        // force = true ("Já paguei"): pula só se conferiu há menos de 3s.
         Task<Response<MySubscriptionDto>> SyncMineAsync(int userId, bool force);
 
         // Verificação leve para as outras telas: se houver checkout pendente, confere no
         // Mercado Pago e devolve só o plano atual e o pendente.
         Task<Response<SubscriptionCheckDto>> CheckPendingAsync(int userId);
 
-        // Admin: troca manual de plano, sem cobrança
+        // Admin: troca manual de plano, sem cobrança (cancela a cobrança no Mercado Pago, se houver)
         Task<Response<MySubscriptionDto>> AdminSetPlanAsync(int userId, string planCode);
 
         // ===== Usados pelo webhook e pelo job de manutenção =====

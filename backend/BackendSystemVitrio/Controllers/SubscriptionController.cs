@@ -66,10 +66,12 @@ namespace BackendSystemVitrio.Controllers
             => Ok(await _subscriptionService.StartCheckoutAsync(User.GetUserId(), dto.PlanCode));
 
         // POST /api/Subscription/sync?force=true
-        // Confere a assinatura no Mercado Pago. A página chama ao abrir (force=false, com
-        // limite de 1 vez por minuto) e o botão "Já paguei" chama com force=true.
+        // Confere a assinatura no Mercado Pago. A página chama ao abrir (force=false) e, logo
+        // depois do checkout e no botão "Já paguei", com force=true. Cada chamada pode consultar
+        // o Mercado Pago, por isso tem limite por lojista.
         [HttpPost("sync")]
         [Authorize(Roles = "Shopkeeper,Admin")]
+        [EnableRateLimiting("subscription-sync")]
         public async Task<IActionResult> Sync([FromQuery] bool force = false)
             => Ok(await _subscriptionService.SyncMineAsync(User.GetUserId(), force));
 
@@ -81,7 +83,8 @@ namespace BackendSystemVitrio.Controllers
             => Ok(await _subscriptionService.CancelAsync(User.GetUserId()));
 
         // PUT /api/Subscription/admin/users/5/plan  { "planCode": "pro" }
-        // Etapa 1: troca manual de plano, só para Admin.
+        // Troca manual de plano, só para Admin: o plano fica sem cobrança até o Admin mudar
+        // de novo, e a cobrança no Mercado Pago (se houver) é cancelada.
         [HttpPut("admin/users/{userId:int}/plan")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AdminSetPlan(int userId, [FromBody] AdminSetPlanDto dto)

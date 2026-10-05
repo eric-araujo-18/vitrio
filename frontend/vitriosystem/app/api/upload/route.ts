@@ -11,6 +11,10 @@ cloudinary.config({
 // URL do backend vista pelo servidor do Next (pode ser diferente da pública em produção).
 const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5020";
 
+// Pasta no Cloudinary. Precisa ser a mesma de Cloudinary:Folder no backend, que apaga as
+// imagens sem uso dessa pasta. Se dev e produção usarem a mesma conta, use pastas diferentes.
+const FOLDER = process.env.CLOUDINARY_FOLDER || "vitrio";
+
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -71,7 +75,7 @@ export async function POST(req: NextRequest) {
     const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
     const uploadResult = await cloudinary.uploader.upload(base64, {
-      folder: "vitrio",
+      folder: FOLDER,
       resource_type: "image", // Cloudinary rejeita o que não for imagem de verdade
     });
 

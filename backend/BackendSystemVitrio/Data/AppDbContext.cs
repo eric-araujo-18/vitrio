@@ -38,13 +38,18 @@ namespace BackendSystemVitrio.Data
                 .IsUnique(); // vários NULL (clientes sem CPF) não conflitam no PostgreSQL
 
             // ===== Store =====
+            // Nome e CNPJ só bloqueiam entre lojas não excluídas: excluir uma loja libera os dois.
+            // O nome é único por lojista (lojistas diferentes podem ter lojas com o mesmo nome;
+            // a URL continua única pelo slug).
             modelBuilder.Entity<Store>()
                 .HasIndex(s => s.Cnpj)
-                .IsUnique();
+                .IsUnique()
+                .HasFilter("\"DeletionDate\" IS NULL");
 
             modelBuilder.Entity<Store>()
-                .HasIndex(s => s.Name)
-                .IsUnique();
+                .HasIndex(s => new { s.UserId, s.Name })
+                .IsUnique()
+                .HasFilter("\"DeletionDate\" IS NULL");
 
             modelBuilder.Entity<Store>()
                 .HasIndex(s => s.Slug)
