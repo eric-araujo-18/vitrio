@@ -99,6 +99,13 @@ export default function Login() {
           required
         />
 
+        <Link
+          href="/auth/forgot-password"
+          className="-mt-1 self-end text-label-md text-on-surface-variant transition-colors hover:text-primary hover:underline"
+        >
+          Esqueci minha senha
+        </Link>
+
         {error && <AuthError>{error}</AuthError>}
 
         <AuthSubmit loading={loading} loadingText="Entrando...">

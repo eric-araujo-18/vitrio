@@ -8,6 +8,10 @@ interface ShopkeeperStoreValue {
   // Atualiza a loja no contexto depois de editar (personalização/configurações),
   // pra sidebar e demais telas refletirem sem recarregar.
   setStore: (store: Store) => void;
+  // Pedidos pendentes (contador da sidebar), atualizado de tempos em tempos pelo layout.
+  pendingOrders: number;
+  // Confere os pedidos na hora (ex.: depois de mudar o status de um pedido).
+  refreshPendingOrders: () => void;
 }
 
 const ShopkeeperStoreContext = createContext<ShopkeeperStoreValue | undefined>(undefined);

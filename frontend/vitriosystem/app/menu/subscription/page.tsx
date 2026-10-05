@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, CircleAlert, CircleCheck, CreditCard, ExternalLink, LoaderCircle, Minus, TriangleAlert } from "lucide-react";
 import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
 import { unwrap } from "@/lib/api";
@@ -23,6 +23,42 @@ import { formatPrice } from "@/lib/format";
 
 const GRACE_DAYS = 7; // mesmo valor do backend (SubscriptionService.GraceDays)
 
+// Conferência do pagamento pendente: rápida logo depois de voltar do checkout, lenta depois.
+const FAST_POLL_MS = 5_000;
+const FAST_POLL_COUNT = 12; // 1 minuto
+const SLOW_POLL_MS = 30_000;
+const SLOW_POLL_COUNT = 30; // 15 minutos
+
+// Plano escolhido ao sair para o checkout (mesma aba). Na volta, diz qual plano estava sendo
+// pago mesmo se o Mercado Pago já tiver confirmado antes de a página carregar.
+const CHECKOUT_PLAN_KEY = "vitrio_checkout_plan";
+
+function rememberCheckout(planCode: string) {
+  try {
+    sessionStorage.setItem(CHECKOUT_PLAN_KEY, planCode);
+  } catch {
+    // storage bloqueado: na volta só não dá para mostrar o aviso de confirmação
+  }
+}
+
+function readCheckoutPlan(): string | null {
+  try {
+    return sessionStorage.getItem(CHECKOUT_PLAN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// Fim da volta do checkout: esquece o plano guardado e tira o ?preapproval_id da URL.
+function forgetCheckout() {
+  try {
+    sessionStorage.removeItem(CHECKOUT_PLAN_KEY);
+  } catch {
+    // nada a fazer
+  }
+  if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
+}
+
 const card =
   "rounded-2xl border border-slate-200/85 bg-white p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.03),0_4px_12px_-2px_rgba(15,23,42,0.05)] sm:p-6";
 
@@ -39,6 +75,14 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// Resultado de um checkout que deixou de estar pendente. "Pendente sumiu" não quer dizer
+// "pago": o backend também limpa o pendente quando o checkout é cancelado ou expira.
+function paymentOutcome(expectedPlanCode: string | null, data: MySubscription) {
+  return data.plan.code === expectedPlanCode
+    ? `Pagamento confirmado! Seu plano agora é ${data.plan.name}.`
+    : `O pagamento não foi concluído (o checkout foi cancelado ou expirou). Seu plano continua ${data.plan.name}.`;
+}
+
 export default function SubscriptionPage() {
   return (
     <DashboardShell title="Assinatura" subtitle="Seu plano, o que você está usando e os planos disponíveis.">
@@ -53,50 +97,120 @@ function SubscriptionContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // código do plano em ação, ou "cancel" / "sync"
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // true logo depois de voltar do checkout: confere rápido (a cada 5s) por 1 minuto.
   const [waitingPayment, setWaitingPayment] = useState(false);
-  const pollCount = useRef(0);
+
+  // Plano do pagamento em andamento: o pendente visto por último ou, ao voltar do Mercado Pago,
+  // o plano guardado antes de ir para o checkout. Quando o pendente some, compara com o plano
+  // atual para saber se foi pago ou se o checkout foi cancelado/expirou.
+  const pendingPlanRef = useRef<string | null>(null);
+
+  // Cada consulta ganha um número; só a resposta da consulta mais recente vale. Sem isso, uma
+  // resposta antiga ("pendente") chegando depois de uma nova ("pago") desfaria a tela.
+  const requestSeq = useRef(0);
+  const lastRefresh = useRef(0);
+
+  // Busca o estado (conferindo no Mercado Pago). null = chegou uma resposta mais nova; ignore.
+  const fetchState = useCallback(async (force: boolean) => {
+    const seq = ++requestSeq.current;
+    lastRefresh.current = Date.now();
+    const data = await unwrap(syncSubscription(force)).catch(() => unwrap(getMySubscription()));
+    return seq === requestSeq.current ? data : null;
+  }, []);
+
+  // Aplica um estado novo e, se o pagamento que estava pendente deixou de estar, avisa o resultado.
+  const receive = useCallback((data: MySubscription) => {
+    setMine(data);
+    const pendingBefore = pendingPlanRef.current;
+    pendingPlanRef.current = data.pendingPlan?.code ?? null;
+    if (data.pendingPlan) return;
+
+    setWaitingPayment(false);
+    if (pendingBefore) {
+      setNotice(paymentOutcome(pendingBefore, data));
+      forgetCheckout();
+    }
+  }, []);
+
+  // Para ações que mudam o pendente por outro motivo (ex.: cancelar a assinatura): aplica o
+  // estado sem o aviso de "pagamento concluído/não concluído".
+  function applyQuietly(data: MySubscription) {
+    requestSeq.current++; // descarta consultas que ainda estejam em andamento
+    setMine(data);
+    pendingPlanRef.current = data.pendingPlan?.code ?? null;
+  }
 
   // Ao abrir: confere no Mercado Pago (pega, por ex., cancelamento feito direto no app deles).
   useEffect(() => {
     let active = true;
-    unwrap(syncSubscription(false))
-      .catch(() => unwrap(getMySubscription()))
+    // Voltou do checkout (o back_url traz ?preapproval_id=...)
+    const returning = new URLSearchParams(window.location.search).has("preapproval_id");
+    const checkoutPlan = returning ? readCheckoutPlan() : null;
+    if (checkoutPlan) pendingPlanRef.current = checkoutPlan;
+
+    fetchState(false)
       .then((data) => {
-        if (!active) return;
-        setMine(data);
-        // Voltou do checkout (o back_url traz ?preapproval_id=...)
-        if (new URLSearchParams(window.location.search).has("preapproval_id")) {
-          if (data.pendingPlan) setWaitingPayment(true);
-          else window.history.replaceState(null, "", window.location.pathname);
-        }
+        if (!active || !data) return;
+        receive(data);
+        if (returning && data.pendingPlan) setWaitingPayment(true);
+        else if (returning) forgetCheckout();
       })
       .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar a assinatura."));
     return () => {
       active = false;
     };
-  }, []);
+  }, [fetchState, receive]);
 
-  // Depois do checkout: confere a cada 5s por até 1 minuto.
+  // Enquanto houver pagamento pendente, confere sozinho: a cada 5s no primeiro minuto depois
+  // de voltar do checkout e, depois disso, a cada 30s (só com a aba visível) por até 15 min.
+  // Uma consulta só começa depois que a anterior terminou.
+  const hasPending = !!mine?.pendingPlan;
   useEffect(() => {
-    if (!waitingPayment) return;
-    pollCount.current = 0;
-    const timer = setInterval(async () => {
-      pollCount.current += 1;
-      try {
-        const data = await unwrap(syncSubscription(true));
-        setMine(data);
-        if (!data.pendingPlan) {
-          setWaitingPayment(false);
-          setNotice(`Pagamento confirmado! Seu plano agora é ${data.plan.name}.`);
-          window.history.replaceState(null, "", window.location.pathname);
+    if (!hasPending) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let polls = 0;
+    const delay = waitingPayment ? FAST_POLL_MS : SLOW_POLL_MS;
+    const maxPolls = waitingPayment ? FAST_POLL_COUNT : SLOW_POLL_COUNT;
+
+    const tick = async () => {
+      polls += 1;
+      if (waitingPayment || document.visibilityState === "visible") {
+        try {
+          const data = await fetchState(waitingPayment);
+          if (stopped) return;
+          if (data) receive(data);
+        } catch {
+          // sem rede: tenta de novo na próxima
         }
-      } catch {
-        // tenta de novo no próximo ciclo
       }
-      if (pollCount.current >= 12) setWaitingPayment(false);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [waitingPayment]);
+      if (stopped) return;
+      if (polls < maxPolls) timer = setTimeout(tick, delay);
+      else if (waitingPayment) setWaitingPayment(false); // passa para a conferência lenta
+    };
+
+    timer = setTimeout(tick, delay);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [hasPending, waitingPayment, fetchState, receive]);
+
+  // Voltou para a aba (ex.: pagou no Mercado Pago em outra aba): confere na hora.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh.current < 2000) return;
+      fetchState(false)
+        .then((data) => data && receive(data))
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [fetchState, receive]);
 
   function startAction(key: string) {
     setError(null);
@@ -117,10 +231,11 @@ function SubscriptionContent() {
       if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Não foi possível trocar de plano.");
 
       if (res.dados.checkoutUrl) {
+        rememberCheckout(option.plan.code); // para saber, na volta, qual plano estava sendo pago
         window.location.assign(res.dados.checkoutUrl); // vai pagar no Mercado Pago
         return;
       }
-      setMine(await unwrap(getMySubscription()));
+      applyQuietly(await unwrap(getMySubscription()));
       setNotice(res.mensagem ?? "Plano atualizado.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível trocar de plano.");
@@ -129,15 +244,16 @@ function SubscriptionContent() {
   }
 
   async function handleSync() {
+    const hadPending = pendingPlanRef.current !== null;
     startAction("sync");
     try {
-      const data = await unwrap(syncSubscription(true));
-      setMine(data);
-      setNotice(
-        data.pendingPlan
-          ? "O Mercado Pago ainda não confirmou o pagamento. Se você acabou de pagar, aguarde um pouco e tente de novo."
-          : `Tudo certo! Seu plano é ${data.plan.name}.`
-      );
+      const data = await fetchState(true);
+      if (data) {
+        receive(data); // se o pendente foi resolvido, já mostra se foi pago ou não
+        if (data.pendingPlan)
+          setNotice("O Mercado Pago ainda não confirmou o pagamento. Se você acabou de pagar, aguarde um pouco e tente de novo.");
+        else if (!hadPending) setNotice(`Tudo certo! Seu plano é ${data.plan.name}.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível verificar o pagamento.");
     }
@@ -148,7 +264,7 @@ function SubscriptionContent() {
     startAction("cancel");
     try {
       const data = await unwrap(cancelSubscription());
-      setMine(data);
+      applyQuietly(data);
       setConfirmCancel(false);
       setNotice(
         data.currentPeriodEnd
@@ -195,7 +311,7 @@ function SubscriptionContent() {
           mine.pendingPlan && (
             <Banner tone="info">
               Há um pagamento do plano {mine.pendingPlan.name} aguardando confirmação. Enquanto isso, você continua no{" "}
-              {plan.name}.{" "}
+              {plan.name}. Esta página confere sozinha de tempos em tempos.{" "}
               <button
                 type="button"
                 onClick={handleSync}

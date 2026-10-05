@@ -270,6 +270,7 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
             sub.PendingPlanId = target.Id;
             sub.PendingGatewaySubscriptionId = preapproval.Id;
+            sub.PendingSince = DateTime.UtcNow;
             sub.UpdatedDate = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -381,14 +382,20 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
         // ===================== Mercado Pago -> Vitrio =====================
 
-        public async Task SyncPreapprovalAsync(string preapprovalId)
+        public Task SyncPreapprovalAsync(string preapprovalId) => SyncPreapprovalAsync(preapprovalId, paymentApproved: false);
+
+        // paymentApproved: veio de uma cobrança aprovada (webhook de pagamento). É a única prova
+        // de pagamento que tira uma assinatura de "atrasada"/"suspensa" (ver ApplyActiveStatus).
+        private async Task SyncPreapprovalAsync(string preapprovalId, bool paymentApproved)
         {
             // Nunca confia no conteúdo da notificação: busca o estado atual na API.
             var preapproval = await _mercadoPago.GetPreapprovalAsync(preapprovalId);
             _logger.LogInformation("Assinatura {Id} no Mercado Pago está com status {Status}", preapproval.Id, preapproval.Status);
 
             var sub = await _context.Subscription.FirstOrDefaultAsync(s =>
-                s.GatewaySubscriptionId == preapproval.Id || s.PendingGatewaySubscriptionId == preapproval.Id);
+                s.GatewaySubscriptionId == preapproval.Id ||
+                s.PendingGatewaySubscriptionId == preapproval.Id ||
+                s.GatewaySubscriptionIdToCancel == preapproval.Id);
 
             if (sub is null)
             {
@@ -398,10 +405,12 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
             var now = DateTime.UtcNow;
 
-            if (sub.PendingGatewaySubscriptionId == preapproval.Id)
+            if (sub.GatewaySubscriptionIdToCancel == preapproval.Id)
+                await CancelLeftoverAsync(sub, preapproval.Status);
+            else if (sub.PendingGatewaySubscriptionId == preapproval.Id)
                 await ApplyPendingStatusAsync(sub, preapproval, now);
             else
-                ApplyActiveStatus(sub, preapproval, now);
+                ApplyActiveStatus(sub, preapproval, now, paymentApproved);
 
             sub.LastSyncedAt = now;
             sub.UpdatedDate = now;
@@ -433,26 +442,61 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             ClearPending(sub);
 
             // Upgrade: cancela a assinatura antiga para nunca haver duas cobranças.
-            if (previousGatewayId is not null && previousGatewayId != preapproval.Id)
-                await TryCancelAtGatewayAsync(previousGatewayId);
+            // Se o Mercado Pago falhar agora, guarda o id e a manutenção tenta de novo até conseguir.
+            if (previousGatewayId is not null && previousGatewayId != preapproval.Id &&
+                !await TryCancelAtGatewayAsync(previousGatewayId))
+            {
+                if (sub.GatewaySubscriptionIdToCancel is not null && sub.GatewaySubscriptionIdToCancel != previousGatewayId)
+                    _logger.LogError(
+                        "Assinatura {Old} ainda não foi cancelada no Mercado Pago e agora {New} também precisa ser. " +
+                        "Cancele {Old} manualmente no painel do Mercado Pago.",
+                        sub.GatewaySubscriptionIdToCancel, previousGatewayId, sub.GatewaySubscriptionIdToCancel);
+                sub.GatewaySubscriptionIdToCancel = previousGatewayId;
+            }
+        }
+
+        // Assinatura antiga de um upgrade: só precisa terminar cancelada no Mercado Pago.
+        private async Task CancelLeftoverAsync(Subscription sub, string? status)
+        {
+            if (sub.GatewaySubscriptionIdToCancel is null)
+                return;
+            if (status == "cancelled" || await TryCancelAtGatewayAsync(sub.GatewaySubscriptionIdToCancel))
+                sub.GatewaySubscriptionIdToCancel = null;
         }
 
         // Assinatura paga que já estava valendo
-        private static void ApplyActiveStatus(Subscription sub, MpPreapproval preapproval, DateTime now)
+        private static void ApplyActiveStatus(Subscription sub, MpPreapproval preapproval, DateTime now, bool paymentApproved)
         {
             switch (preapproval.Status)
             {
                 case "authorized":
-                    if (sub.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Suspended)
+                    var previousEnd = sub.CurrentPeriodEnd;
+                    // Datas de hoje/passado do sandbox são ignoradas.
+                    var next = ValidNextPaymentDate(preapproval, now);
+
+                    // Começou um período novo: a próxima cobrança ficou cerca de um mês depois do fim
+                    // do período anterior (pequenos ajustes de data não contam).
+                    var newPeriod = next is not null && previousEnd is not null && next > previousEnd.Value.AddDays(20);
+
+                    // Downgrade agendado vale a partir do período novo. Precisa ser aplicado ANTES de
+                    // avançar a data: depois disso, "o período acabou?" nunca seria verdade.
+                    if (newPeriod)
+                        ApplyScheduledPlan(sub, now);
+                    else
+                        ApplyScheduledPlanIfDue(sub, now);
+
+                    // Só avança a data (renovação).
+                    if (next is not null && (previousEnd is null || next > previousEnd))
+                        sub.CurrentPeriodEnd = next;
+
+                    // "authorized" NÃO quer dizer que a última cobrança foi paga: a assinatura continua
+                    // autorizada enquanto o Mercado Pago tenta cobrar de novo. Por isso só sai de
+                    // atrasada/suspensa com uma cobrança aprovada (webhook de pagamento).
+                    if ((sub.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Suspended) && paymentApproved)
                     {
                         sub.Status = SubscriptionStatus.Active;
                         sub.PastDueSince = null;
                     }
-                    // Só avança a data (renovação). Datas de hoje/passado do sandbox são ignoradas.
-                    var next = ValidNextPaymentDate(preapproval, now);
-                    if (next is not null && (sub.CurrentPeriodEnd is null || next > sub.CurrentPeriodEnd))
-                        sub.CurrentPeriodEnd = next;
-                    ApplyScheduledPlanIfDue(sub, now);
                     break;
 
                 case "paused":
@@ -479,7 +523,7 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
             if (charge.Payment?.Status == "approved")
             {
-                await SyncPreapprovalAsync(charge.PreapprovalId);
+                await SyncPreapprovalAsync(charge.PreapprovalId, paymentApproved: true);
                 return;
             }
 
@@ -521,38 +565,86 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
             await _context.SaveChangesAsync();
 
-            // 3) Pagamentos abertos há mais de 10 min: confere; abandonados há 2 dias: descarta.
+            // 3) Checkouts abertos há mais de 10 min (e não conferidos nos últimos 10): confere.
+            //    Os abertos há mais de 2 dias são descartados. A idade vem de PendingSince, que as
+            //    conferências não alteram (UpdatedDate muda a cada conferência).
             var pending = await _context.Subscription
-                .Where(s => s.PendingGatewaySubscriptionId != null && (s.UpdatedDate ?? s.CreationDate) < now.AddMinutes(-10))
-                .Select(s => new { s.Id, GatewayId = s.PendingGatewaySubscriptionId!, Since = s.UpdatedDate ?? s.CreationDate })
+                .Where(s => s.PendingGatewaySubscriptionId != null &&
+                            (s.PendingSince ?? s.CreationDate) < now.AddMinutes(-10) &&
+                            (s.LastSyncedAt == null || s.LastSyncedAt < now.AddMinutes(-10)))
+                .OrderBy(s => s.LastSyncedAt)
+                .Select(s => new { s.Id, GatewayId = s.PendingGatewaySubscriptionId!, Since = s.PendingSince ?? s.CreationDate })
                 .Take(50)
                 .ToListAsync();
 
             foreach (var item in pending)
             {
-                try
-                {
-                    await SyncPreapprovalAsync(item.GatewayId);
-
-                    if (item.Since < now.AddDays(-2))
-                    {
-                        var sub = await _context.Subscription.FirstAsync(s => s.Id == item.Id);
-                        if (sub.PendingGatewaySubscriptionId == item.GatewayId)
-                        {
-                            await TryCancelAtGatewayAsync(item.GatewayId);
-                            ClearPending(sub);
-                            sub.UpdatedDate = now;
-                            await _context.SaveChangesAsync();
-                        }
-                    }
-                }
+                // Confere antes: pode ter sido pago agora.
+                try { await SyncPreapprovalAsync(item.GatewayId); }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Falha ao conferir pagamento aberto {Id}", item.GatewayId);
+                    _context.ChangeTracker.Clear(); // não deixa uma falha contaminar os próximos
+                }
+
+                if (item.Since >= now.AddDays(-2))
+                    continue;
+
+                try
+                {
+                    var sub = await _context.Subscription.FirstAsync(s => s.Id == item.Id);
+                    if (sub.PendingGatewaySubscriptionId != item.GatewayId)
+                        continue; // foi pago ou trocado nesse meio-tempo
+
+                    // Só descarta se conseguir cancelar no Mercado Pago; senão o link continuaria
+                    // pagável e o pagamento não seria ligado a ninguém. Tenta de novo na próxima rodada.
+                    if (!await TryCancelAtGatewayAsync(item.GatewayId))
+                        continue;
+
+                    ClearPending(sub);
+                    sub.UpdatedDate = now;
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Falha ao descartar pagamento abandonado {Id}", item.GatewayId);
+                    _context.ChangeTracker.Clear();
                 }
             }
 
-            // 4) Assinaturas pagas não conferidas há 6h: pega mudanças feitas direto no
+            // 4) Assinaturas antigas de upgrades cujo cancelamento no Mercado Pago falhou: tenta de novo.
+            var leftoverIds = await _context.Subscription
+                .Where(s => s.GatewaySubscriptionIdToCancel != null)
+                .Select(s => s.Id)
+                .Take(50)
+                .ToListAsync();
+
+            foreach (var subId in leftoverIds)
+            {
+                try
+                {
+                    var s = await _context.Subscription.FirstAsync(x => x.Id == subId);
+                    if (s.GatewaySubscriptionIdToCancel is null)
+                        continue;
+
+                    string? status;
+                    try { status = (await _mercadoPago.GetPreapprovalAsync(s.GatewaySubscriptionIdToCancel)).Status; }
+                    catch (MercadoPagoException ex) when (ex.StatusCode == StatusCodes.Status404NotFound)
+                    {
+                        status = "cancelled"; // não existe mais no Mercado Pago
+                    }
+
+                    await CancelLeftoverAsync(s, status);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Falha ao cancelar a assinatura antiga da assinatura {SubId}", subId);
+                    _context.ChangeTracker.Clear();
+                }
+            }
+
+            // 5) Assinaturas pagas não conferidas há 6h: pega mudanças feitas direto no
             //    Mercado Pago (ex: cancelamento pelo app), mesmo sem webhook.
             var activeIds = await _context.Subscription
                 .Where(s => s.GatewaySubscriptionId != null &&
@@ -565,7 +657,11 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             foreach (var id in activeIds)
             {
                 try { await SyncPreapprovalAsync(id); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Falha ao conferir assinatura {Id}", id); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Falha ao conferir assinatura {Id}", id);
+                    _context.ChangeTracker.Clear();
+                }
             }
         }
 
@@ -587,6 +683,7 @@ namespace BackendSystemVitrio.Services.SubscriptionService
         {
             s.PendingPlanId = null;
             s.PendingGatewaySubscriptionId = null;
+            s.PendingSince = null;
         }
 
         private static void MarkCanceled(Subscription s, DateTime now)
@@ -599,17 +696,37 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
         private static void ApplyScheduledPlanIfDue(Subscription s, DateTime now)
         {
-            if (s.ScheduledPlanId is null || s.CurrentPeriodEnd is null || s.CurrentPeriodEnd > now)
+            if (s.CurrentPeriodEnd is null || s.CurrentPeriodEnd > now)
+                return;
+            ApplyScheduledPlan(s, now);
+        }
+
+        private static void ApplyScheduledPlan(Subscription s, DateTime now)
+        {
+            if (s.ScheduledPlanId is null)
                 return;
             s.PlanId = s.ScheduledPlanId.Value;
             s.ScheduledPlanId = null;
             s.UpdatedDate = now;
         }
 
-        private async Task TryCancelAtGatewayAsync(string gatewayId)
+        // true = a assinatura ficou cancelada no Mercado Pago (ou nem existe mais lá).
+        private async Task<bool> TryCancelAtGatewayAsync(string gatewayId)
         {
-            try { await _mercadoPago.CancelPreapprovalAsync(gatewayId); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Não foi possível cancelar a assinatura {Id} no Mercado Pago", gatewayId); }
+            try
+            {
+                await _mercadoPago.CancelPreapprovalAsync(gatewayId);
+                return true;
+            }
+            catch (MercadoPagoException ex) when (ex.StatusCode == StatusCodes.Status404NotFound)
+            {
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Não foi possível cancelar a assinatura {Id} no Mercado Pago", gatewayId);
+                return false;
+            }
         }
 
         private static readonly Expression<Func<Plan, PlanDto>> ToPlanDto = p => new PlanDto

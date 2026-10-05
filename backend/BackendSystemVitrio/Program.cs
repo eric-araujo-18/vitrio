@@ -10,6 +10,7 @@ using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
 using BackendSystemVitrio.Services.CustomerService;
+using BackendSystemVitrio.Services.Email;
 using BackendSystemVitrio.Services.SubscriptionService;
 using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.StoreService;
@@ -75,6 +76,18 @@ builder.Services.AddHttpClient<IMercadoPagoClient, MercadoPagoClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddHostedService<SubscriptionMaintenanceService>();
+
+// ===== E-mail (Resend) =====
+// Sem Email:ResendApiKey, no desenvolvimento o e-mail vai para o log em vez de ser enviado.
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.Section));
+builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
+{
+    client.BaseAddress = new Uri("https://api.resend.com/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+// Os e-mails vão para uma fila e saem em segundo plano (a requisição não espera o provedor).
+builder.Services.AddSingleton<EmailQueue>();
+builder.Services.AddHostedService<EmailBackgroundSender>();
 
 builder.Services.AddAuthentication(options =>
 {

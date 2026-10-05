@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { CircleAlert, LoaderCircle, X } from "lucide-react";
 import { login, registerClient } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
@@ -30,6 +32,7 @@ export default function CustomerAuthModal({
   onSuccess,
 }: CustomerAuthModalProps) {
   const { refresh } = useAuth();
+  const { slug } = useParams<{ slug: string }>();
 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
@@ -210,6 +213,15 @@ export default function CustomerAuthModal({
               className={`${storeInput} h-11`}
             />
           </Field>
+
+          {!isRegister && (
+            <Link
+              href={`/auth/forgot-password?store=${slug}`}
+              className="-mt-1 self-end text-body-sm text-slate-500 hover:underline"
+            >
+              Esqueci minha senha
+            </Link>
+          )}
 
           {error && (
             <div

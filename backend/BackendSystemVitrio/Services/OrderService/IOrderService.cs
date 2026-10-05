@@ -10,6 +10,7 @@ namespace BackendSystemVitrio.Services.OrderService
         Task<Response<List<OrderResponseDto>>> GetOrdersByStoreAsync(int storeId, int userId, OrderStatus? status);
         Task<Response<OrderResponseDto>> GetOrderByIdAsync(int orderId, int userId);
         Task<Response<OrderResponseDto>> UpdateStatusAsync(int orderId, int userId, OrderStatus status);
+        Task<Response<PendingOrdersSummaryDto>> GetPendingSummaryAsync(int storeId, int userId);
 
         // Vitrine pública (checkout)
         // customerUserId: conta do cliente, se ele estava logado (null = compra sem conta)

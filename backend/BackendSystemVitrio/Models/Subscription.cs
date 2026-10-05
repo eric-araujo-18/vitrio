@@ -27,6 +27,14 @@ namespace BackendSystemVitrio.Models
         public Plan? PendingPlan { get; set; }
         public string? PendingGatewaySubscriptionId { get; set; }
 
+        // Quando esse checkout foi aberto. Não muda nas conferências periódicas (UpdatedDate
+        // muda), por isso é ele que decide quando um checkout abandonado é descartado.
+        public DateTime? PendingSince { get; set; }
+
+        // Assinatura antiga (de antes de um upgrade) cujo cancelamento no Mercado Pago falhou.
+        // A manutenção tenta de novo até conseguir, para o lojista nunca ser cobrado duas vezes.
+        public string? GatewaySubscriptionIdToCancel { get; set; }
+
         // Plano menor que entra no fim do período atual (downgrade agendado)
         public int? ScheduledPlanId { get; set; }
         public Plan? ScheduledPlan { get; set; }

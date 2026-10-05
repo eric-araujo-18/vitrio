@@ -49,6 +49,18 @@ namespace BackendSystemVitrio.Controllers
             return Ok(Response<string>.Ok(result.Dados.AccessToken, "Login bem-sucedido."));
         }
 
+        // POST /api/Auth/forgot-password -> envia o link de redefinição por e-mail
+        [HttpPost("forgot-password")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordDto dto)
+            => Ok(await _authService.RequestPasswordResetAsync(dto));
+
+        // POST /api/Auth/reset-password -> troca a senha usando o token do link
+        [HttpPost("reset-password")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ResetPassword(ResetPasswordDto dto)
+            => Ok(await _authService.ResetPasswordAsync(dto));
+
         // POST /api/Auth/refresh -> chamado automaticamente pelo frontend quando
         // o access token expira. Não precisa de [Authorize]: a credencial aqui
         // é o refresh token do cookie, não o access token (que já expirou).

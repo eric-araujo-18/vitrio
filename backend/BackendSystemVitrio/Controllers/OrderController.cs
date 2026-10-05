@@ -24,6 +24,11 @@ namespace BackendSystemVitrio.Controllers
         public async Task<IActionResult> GetByStore(int storeId, [FromQuery] OrderStatus? status)
             => Ok(await _orderService.GetOrdersByStoreAsync(storeId, User.GetUserId(), status));
 
+        // GET /api/Order/store/{storeId}/pending-summary -> alerta de pedido novo no painel
+        [HttpGet("store/{storeId:int}/pending-summary")]
+        public async Task<IActionResult> GetPendingSummary(int storeId)
+            => Ok(await _orderService.GetPendingSummaryAsync(storeId, User.GetUserId()));
+
         // GET /api/Order/{id}
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)

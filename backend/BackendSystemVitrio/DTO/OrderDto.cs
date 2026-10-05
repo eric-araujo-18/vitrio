@@ -95,6 +95,16 @@ namespace BackendSystemVitrio.DTO
         public DateTime CreationDate { get; set; }
     }
 
+    // Alerta de pedido novo no painel: consultado de tempos em tempos, então é bem enxuto.
+    public class PendingOrdersSummaryDto
+    {
+        public int PendingCount { get; set; }
+
+        // Pedido pendente mais recente. O painel compara o Id com o último que já viu
+        // para saber se chegou pedido novo.
+        public OrderSummaryDto? Latest { get; set; }
+    }
+
     // Resposta do checkout pro cliente (sem dados internos).
     public class OrderCreatedDto
     {

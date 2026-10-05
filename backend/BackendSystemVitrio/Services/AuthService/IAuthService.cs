@@ -11,6 +11,8 @@ namespace BackendSystemVitrio.Services.AuthService
         Task<Response<AuthResultDto>> ValidateCredentialsAsync(LoginDto dto);
         Task<Response<AuthResultDto>> RefreshTokenAsync(string refreshToken);
         Task<Response<string>> RevokeRefreshTokenAsync(string refreshToken);
+        Task<Response<string>> RequestPasswordResetAsync(ForgotPasswordDto dto);
+        Task<Response<string>> ResetPasswordAsync(ResetPasswordDto dto);
         Task<User?> GetByIdAsync(int id);
     }
 }

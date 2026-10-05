@@ -20,6 +20,7 @@ namespace BackendSystemVitrio.Data
         public DbSet<Subscription> Subscription { get; set; }
         public DbSet<PaymentWebhookEvent> PaymentWebhookEvent { get; set; }
         public DbSet<RefreshToken> RefreshToken { get; set; }
+        public DbSet<PasswordResetToken> PasswordResetToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
 
@@ -257,6 +258,17 @@ namespace BackendSystemVitrio.Data
             modelBuilder.Entity<RefreshToken>()
                 .HasIndex(rt => rt.Token)
                 .IsUnique();
+
+            // ===== PasswordResetToken =====
+            modelBuilder.Entity<PasswordResetToken>(t =>
+            {
+                t.HasIndex(x => x.TokenHash).IsUnique();
+                t.Property(x => x.TokenHash).HasMaxLength(64);
+                t.HasOne(x => x.User)
+                    .WithMany()
+                    .HasForeignKey(x => x.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
             // ===== Order =====
             modelBuilder.Entity<Order>()

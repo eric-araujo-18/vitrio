@@ -37,7 +37,7 @@ import {
 const FILTERS: (OrderStatus | "all")[] = ["all", "Pending", "Confirmed", "Shipped", "Delivered", "Canceled"];
 
 export default function OrdersPage() {
-  const { store } = useShopkeeperStore();
+  const { store, refreshPendingOrders } = useShopkeeperStore();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
@@ -87,6 +87,7 @@ export default function OrdersPage() {
           : prev.filter((o) => o.id !== updated.id)
       );
       setConfirmCancelId(null);
+      refreshPendingOrders(); // o contador da sidebar muda quando um pendente é confirmado/cancelado
     } catch (err) {
       setRowError({
         id: order.id,

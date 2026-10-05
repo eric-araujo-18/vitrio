@@ -26,6 +26,8 @@ interface NavItem {
   icon: LucideIcon;
   /** true = precisa ser rota exata; false = também ativa em sub-rotas */
   exact?: boolean;
+  /** Contador discreto ao lado do item (ex.: pedidos pendentes). 0 = não mostra. */
+  badge?: number;
 }
 
 /*
@@ -41,7 +43,7 @@ export default function SidebarShopkeeper() {
   const { logout } = useAuth();
   // A loja vem do layout (já validada como sendo do usuário logado),
   // então a sidebar não precisa buscar nada sozinha.
-  const { store } = useShopkeeperStore();
+  const { store, pendingOrders } = useShopkeeperStore();
 
   const basePath = `/store/${store.slug}/shopkeeper`;
 
@@ -49,7 +51,7 @@ export default function SidebarShopkeeper() {
     { label: "Início", href: basePath, icon: LayoutDashboard, exact: true },
     { label: "Produtos", href: `${basePath}/products`, icon: Package },
     { label: "Categorias", href: `${basePath}/categories`, icon: Tags },
-    { label: "Pedidos", href: `${basePath}/pedidos`, icon: ShoppingCart },
+    { label: "Pedidos", href: `${basePath}/pedidos`, icon: ShoppingCart, badge: pendingOrders },
     { label: "Personalização", href: `${basePath}/personalizacao`, icon: Palette },
     { label: "Configurações", href: `${basePath}/configuracoes`, icon: Settings },
   ];
@@ -86,8 +88,8 @@ export default function SidebarShopkeeper() {
 
         <div className="hidden min-w-0 flex-col gap-1 min-[901px]:flex">
           <span className="truncate text-body-md leading-tight font-semibold">{store.name}</span>
-          <StatusBadge status={store.isActive ? "Active" : "Pending"}>
-            {store.isActive ? "Ativa" : "Pausada"}
+          <StatusBadge status={!store.isActive ? "Pending" : store.blockedByPlan ? "Blocked" : "Active"}>
+            {!store.isActive ? "Pausada" : store.blockedByPlan ? "Fora do ar" : "Ativa"}
           </StatusBadge>
         </div>
       </div>
@@ -102,13 +104,15 @@ export default function SidebarShopkeeper() {
           {navItems.map((item) => {
             const active = isItemActive(item);
             const Icon = item.icon;
+            const badge = item.badge ?? 0;
+            const label = badge > 0 ? `${item.label} (${badge} pendente${badge === 1 ? "" : "s"})` : item.label;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  aria-label={item.label}
-                  title={item.label}
+                  aria-label={label}
+                  title={label}
                   className={`relative flex items-center justify-center gap-2.5 rounded-lg p-2.5 text-body-md transition-colors min-[901px]:justify-start min-[901px]:px-3 min-[901px]:py-2 ${
                     active
                       ? "bg-[color-mix(in_srgb,var(--sb-accent)_12%,white)] font-semibold text-[var(--sb-accent-dark)] before:absolute before:top-1/2 before:-left-3 before:h-3/5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-[var(--sb-accent)]"
@@ -117,6 +121,22 @@ export default function SidebarShopkeeper() {
                 >
                   <Icon size={20} strokeWidth={2} aria-hidden="true" className="shrink-0" />
                   <span className="hidden min-[901px]:inline">{item.label}</span>
+
+                  {badge > 0 && (
+                    <>
+                      {/* Barra larga: número pequeno à direita. Trilho de ícones: só um ponto. */}
+                      <span
+                        aria-hidden="true"
+                        className="ml-auto hidden min-w-5 rounded-full bg-[color-mix(in_srgb,var(--sb-accent)_14%,white)] px-1.5 text-center text-[11px] leading-5 font-semibold text-[var(--sb-accent-dark)] min-[901px]:inline"
+                      >
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[var(--sb-accent)] ring-2 ring-white min-[901px]:hidden"
+                      />
+                    </>
+                  )}
                 </Link>
               </li>
             );

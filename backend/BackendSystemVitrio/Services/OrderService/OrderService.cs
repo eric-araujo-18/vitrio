@@ -73,6 +73,41 @@ namespace BackendSystemVitrio.Services.OrderService
             }
         }
 
+        public async Task<Response<PendingOrdersSummaryDto>> GetPendingSummaryAsync(int storeId, int userId)
+        {
+            try
+            {
+                var store = await _context.FindOwnedStoreAsync(storeId, userId);
+                if (store is null)
+                    return Response<PendingOrdersSummaryDto>.Fail("Loja não encontrada.");
+
+                var pending = _context.Order.Where(o => o.StoreId == storeId && o.Status == OrderStatus.Pending);
+
+                return Response<PendingOrdersSummaryDto>.Ok(new PendingOrdersSummaryDto
+                {
+                    PendingCount = await pending.CountAsync(),
+                    Latest = await pending
+                        .OrderByDescending(o => o.Id)
+                        .Select(o => new OrderSummaryDto
+                        {
+                            Id = o.Id,
+                            Code = o.Code,
+                            CustomerName = o.CustomerName,
+                            Status = o.Status,
+                            Total = o.Total,
+                            ItemCount = o.Items.Sum(i => i.Quantity),
+                            CreationDate = o.CreationDate,
+                        })
+                        .FirstOrDefaultAsync(),
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao verificar pedidos pendentes");
+                return Response<PendingOrdersSummaryDto>.Fail("Erro ao verificar pedidos pendentes. Tente novamente.");
+            }
+        }
+
         public async Task<Response<OrderResponseDto>> UpdateStatusAsync(int orderId, int userId, OrderStatus status)
         {
             try

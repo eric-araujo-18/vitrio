@@ -233,6 +233,16 @@ export function registerClient(payload: RegisterClientPayload) {
   return request<string>("/api/Auth/register/client", "POST", payload);
 }
 
+// "Esqueci minha senha": envia o link por e-mail. storeSlug faz o link voltar para a vitrine.
+export function forgotPassword(email: string, storeSlug?: string) {
+  return request<string>("/api/Auth/forgot-password", "POST", { email, storeSlug });
+}
+
+// Troca a senha com o token que veio no link do e-mail.
+export function resetPassword(token: string, newPassword: string) {
+  return request<string>("/api/Auth/reset-password", "POST", { token, newPassword });
+}
+
 export async function login(payload: LoginPayload) {
   const response = await request<string>("/api/Auth/login", "POST", payload);
 

@@ -68,6 +68,17 @@ export function updateOrderStatus(id: number, status: OrderStatus) {
   return request<Order>(`/api/Order/${id}/status`, "PUT", { status }, true);
 }
 
+// Alerta de pedido novo no painel (consultado de tempos em tempos).
+export interface PendingOrdersSummary {
+  pendingCount: number;
+  /** Pedido pendente mais recente; o id serve para saber se chegou um novo. */
+  latest: OrderSummary | null;
+}
+
+export function getPendingOrdersSummary(storeId: number) {
+  return request<PendingOrdersSummary>(`/api/Order/store/${storeId}/pending-summary`, "GET", undefined, true);
+}
+
 export function getStoreDashboard(storeId: number) {
   return request<StoreDashboard>(`/api/Store/${storeId}/dashboard`, "GET", undefined, true);
 }

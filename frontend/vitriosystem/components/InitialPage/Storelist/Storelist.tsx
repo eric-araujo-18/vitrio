@@ -65,7 +65,21 @@ export default function Storelist() {
   }
 
   const hasBlocked = stores.some((s) => s.blockedByPlan);
-  const onlineNames = stores.filter((s) => s.isActive && !s.blockedByPlan).map((s) => s.name);
+
+  // Lojas hoje no ar que sairiam do ar para "target" entrar. Mesma regra do backend
+  // (StoreService.GoOnlineAsync): das outras lojas ativas ficam as mais antigas, até completar
+  // o limite do plano junto com "target"; as demais são pausadas.
+  function onlineStoresPausedFor(target: Store) {
+    // Só dá para trocar com o limite cheio, então as lojas no ar são exatamente o limite do plano.
+    const maxStores = stores.filter((s) => s.isActive && !s.blockedByPlan).length;
+    const others = stores
+      .filter((s) => s.id !== target.id && s.isActive)
+      .sort((a, b) => new Date(a.creationDate).getTime() - new Date(b.creationDate).getTime() || a.id - b.id);
+    return others
+      .slice(Math.max(maxStores - 1, 0))
+      .filter((s) => !s.blockedByPlan)
+      .map((s) => s.name);
+  }
 
   function planAction(store: Store) {
     // Fora do ar pelo plano, ou pausada quando o limite de lojas no ar já está cheio.
@@ -86,12 +100,13 @@ export default function Storelist() {
     }
 
     const busy = switchingId === store.id;
+    const pausedNames = onlineStoresPausedFor(store);
     return (
       <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-body-sm text-amber-900">
         <p>
-          {onlineNames.length > 0 ? (
+          {pausedNames.length > 0 ? (
             <>
-              <strong>{onlineNames.join(", ")}</strong> {onlineNames.length === 1 ? "será pausada" : "serão pausadas"}{" "}
+              <strong>{pausedNames.join(", ")}</strong> {pausedNames.length === 1 ? "será pausada" : "serão pausadas"}{" "}
               para esta loja entrar no ar.
             </>
           ) : (

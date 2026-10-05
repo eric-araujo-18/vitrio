@@ -1,10 +1,13 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BackendSystemVitrio.Wrappers;
@@ -15,15 +18,24 @@ namespace BackendSystemVitrio.Services.AuthService
 {
     public class AuthService : IAuthService
     {
+        // Validade do link de "esqueci minha senha"
+        private const int PasswordResetMinutes = 30;
+        // Intervalo mínimo entre dois e-mails de redefinição para a mesma conta
+        // (impede usar o formulário para lotar a caixa de alguém).
+        private const int PasswordResetCooldownMinutes = 2;
+        private static readonly Regex StoreSlugFormat = new("^[a-z0-9-]{1,100}$", RegexOptions.Compiled);
+
         private readonly AppDbContext _context;
         private readonly ILogger<AuthService> _logger;
         private readonly IConfiguration _configuration;
+        private readonly EmailQueue _emailQueue;
 
-        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger)
+        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger, EmailQueue emailQueue)
         {
             _context = context;
             _logger = logger;
             _configuration = configuration;
+            _emailQueue = emailQueue;
         }
 
         public async Task<Response<string>> RegisterAsync(RegisterDto dto)
@@ -348,6 +360,127 @@ namespace BackendSystemVitrio.Services.AuthService
             }
 
             return response;
+        }
+
+        // ===================== Esqueci minha senha =====================
+
+        // Responde sempre a mesma coisa, exista ou não a conta: assim a tela não revela
+        // quais e-mails estão cadastrados.
+        public async Task<Response<string>> RequestPasswordResetAsync(ForgotPasswordDto dto)
+        {
+            const string done = "Se existir uma conta com esse e-mail, enviamos um link para criar uma nova senha. " +
+                                "Confira também a caixa de spam.";
+            try
+            {
+                var email = dto.Email?.Trim().ToLowerInvariant() ?? "";
+                if (!IsValidEmail(email))
+                    return Response<string>.Fail("Informe um e-mail válido.");
+
+                var user = await _context.User.FirstOrDefaultAsync(u => u.Email == email && u.DeletionDate == null);
+                if (user is null)
+                    return Response<string>.Ok("", done);
+
+                // Pediu há pouco: não manda outro (o link anterior continua valendo).
+                var cooldownStart = DateTime.UtcNow.AddMinutes(-PasswordResetCooldownMinutes);
+                if (await _context.PasswordResetToken.AnyAsync(t => t.UserId == user.Id && t.CreationDate > cooldownStart))
+                    return Response<string>.Ok("", done);
+
+                // Um link válido por vez: pedir de novo invalida os anteriores.
+                await _context.PasswordResetToken.Where(t => t.UserId == user.Id).ExecuteDeleteAsync();
+
+                var token = GenerateSecureRandomToken();
+                _context.PasswordResetToken.Add(new PasswordResetToken
+                {
+                    UserId = user.Id,
+                    TokenHash = HashToken(token),
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(PasswordResetMinutes),
+                });
+                await _context.SaveChangesAsync();
+
+                // Envio em segundo plano: a resposta não espera o provedor (falhas vão para o log).
+                if (!_emailQueue.TryEnqueue(new EmailMessage(user.Email, "Redefinir sua senha - Vitrio",
+                        BuildPasswordResetEmail(user.Name, BuildPasswordResetLink(token, dto.StoreSlug)))))
+                    _logger.LogError("Fila de e-mails cheia: link de redefinição para o usuário {UserId} não foi enviado", user.Id);
+
+                return Response<string>.Ok("", done);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao gerar o link de redefinição de senha");
+                return Response<string>.Fail("Não foi possível enviar o e-mail agora. Tente novamente em instantes.");
+            }
+        }
+
+        public async Task<Response<string>> ResetPasswordAsync(ResetPasswordDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dto.Token))
+                    return Response<string>.Fail("Link inválido. Peça um novo em \"Esqueci minha senha\".");
+
+                if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < PasswordHelper.MinLength)
+                    return Response<string>.Fail($"A nova senha precisa ter pelo menos {PasswordHelper.MinLength} caracteres.");
+
+                var tokenHash = HashToken(dto.Token);
+                var reset = await _context.PasswordResetToken
+                    .Include(t => t.User)
+                    .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+                if (reset is null || reset.ExpiresAt < DateTime.UtcNow || reset.User is null || reset.User.DeletionDate is not null)
+                    return Response<string>.Fail("Este link expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".");
+
+                var user = reset.User;
+                PasswordHelper.CreatePasswordHash(dto.NewPassword, out var hash, out var salt);
+                user.PasswordHash = hash;
+                user.PasswordSalt = salt;
+
+                // O link vale uma vez só.
+                _context.PasswordResetToken.Remove(reset);
+
+                // Derruba as sessões abertas: se alguém estava usando a conta, perde o acesso.
+                await _context.RefreshToken
+                    .Where(rt => rt.UserId == user.Id && rt.RevokedAt == null)
+                    .ExecuteUpdateAsync(set => set.SetProperty(rt => rt.RevokedAt, (DateTime?)DateTime.UtcNow));
+
+                await _context.SaveChangesAsync();
+
+                return Response<string>.Ok("", "Senha alterada. Agora é só entrar com a nova senha.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao redefinir senha");
+                return Response<string>.Fail("Erro ao redefinir senha. Tente novamente.");
+            }
+        }
+
+        private string BuildPasswordResetLink(string token, string? storeSlug)
+        {
+            var frontend = (_configuration["App:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            var link = $"{frontend}/auth/reset-password?token={Uri.EscapeDataString(token)}";
+
+            // Só aceita um slug com formato válido (ele vai parar dentro de um link no e-mail).
+            if (!string.IsNullOrWhiteSpace(storeSlug) && StoreSlugFormat.IsMatch(storeSlug))
+                link += $"&store={storeSlug}";
+
+            return link;
+        }
+
+        private static string BuildPasswordResetEmail(string name, string link)
+        {
+            var safeName = WebUtility.HtmlEncode(name);
+            var safeLink = WebUtility.HtmlEncode(link);
+            return $"""
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#111827">
+                  <h2 style="margin-bottom:8px">Redefinir sua senha</h2>
+                  <p>Olá, {safeName}.</p>
+                  <p>Recebemos um pedido para criar uma nova senha para a sua conta na Vitrio.</p>
+                  <p style="margin:28px 0">
+                    <a href="{safeLink}" style="background:#2563eb;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Criar nova senha</a>
+                  </p>
+                  <p style="color:#6b7280;font-size:14px">O link vale por {PasswordResetMinutes} minutos e só pode ser usado uma vez.
+                  Se não foi você que pediu, é só ignorar este e-mail: sua senha continua a mesma.</p>
+                </div>
+                """;
         }
 
         public async Task<User?> GetByIdAsync(int id)

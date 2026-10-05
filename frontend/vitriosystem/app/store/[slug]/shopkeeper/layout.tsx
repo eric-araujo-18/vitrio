@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, LoaderCircle, Store as StoreIcon } from "lucide-react";
@@ -8,6 +8,8 @@ import { getMyStores, ROLES, type Store } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
 import SidebarShopkeeper from "./components/Sidebar/SidebarShopkeeper";
 import { ShopkeeperStoreProvider } from "./components/ShopkeeperStoreContext";
+import { useOrderAlerts } from "./components/OrderAlerts/useOrderAlerts";
+import NewOrderToast from "./components/OrderAlerts/NewOrderToast";
 import { WarningBox, btnPrimary } from "../shopkeeper/components/Ui";
 
 // Layout comum de TODAS as telas do painel da loja:
@@ -30,6 +32,9 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
   const store = current?.store ?? null;
   const status = current?.status ?? "loading";
   const setStore = (updated: Store) => setLoaded({ slug, store: updated, status: "ready" });
+
+  // Alerta de pedido novo (contador na sidebar + aviso discreto no canto).
+  const orderAlerts = useOrderAlerts(store?.id ?? null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -91,15 +96,31 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
   }
 
   return (
-    <ShopkeeperStoreProvider value={{ store, setStore }}>
-      <div className="flex min-h-screen bg-surface text-on-surface antialiased">
+    <ShopkeeperStoreProvider
+      value={{
+        store,
+        setStore,
+        pendingOrders: orderAlerts.pendingCount,
+        refreshPendingOrders: orderAlerts.refresh,
+      }}
+    >
+      <div
+        style={
+          {
+            "--sb-accent": store.primaryColor || "#2563eb",
+            "--sb-accent-dark": store.secondaryColor || "#1d4ed8",
+          } as CSSProperties
+        }
+        className="flex min-h-screen bg-surface text-on-surface antialiased"
+      >
         <SidebarShopkeeper />
         <main className="min-w-0 flex-1 animate-[fadeIn_0.3s_ease] p-5 md:px-10 md:py-8">
           {store.blockedByPlan && (
             <div className="mb-5">
               <WarningBox>
                 Esta loja está fora do ar e não recebe pedidos novos, porque seu plano permite menos lojas no ar do
-                que você tem. Os pedidos já feitos continuam aqui. Para colocá-la no ar, pause outra loja ou{" "}
+                que você tem. Os pedidos já feitos continuam aqui. Para colocá-la no ar, use &quot;Deixar esta loja
+                no ar&quot; em Configurações ou{" "}
                 <Link href="/menu/subscription" className="font-semibold underline">
                   veja os planos
                 </Link>
@@ -109,6 +130,14 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
           )}
           {children}
         </main>
+
+        {orderAlerts.newOrder && (
+          <NewOrderToast
+            order={orderAlerts.newOrder}
+            ordersHref={`/store/${store.slug}/shopkeeper/pedidos`}
+            onDismiss={orderAlerts.dismiss}
+          />
+        )}
       </div>
     </ShopkeeperStoreProvider>
   );

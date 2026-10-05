@@ -66,20 +66,23 @@ export default function ProductsShopkeeper() {
     };
   }, [store.id]);
 
+  const hiddenByPlanCount = useMemo(() => products.filter((p) => p.hiddenByPlan).length, [products]);
+  const filters = hiddenByPlanCount > 0 ? [...FILTERS, HIDDEN_BY_PLAN_FILTER] : FILTERS;
+  // O filtro "Fora da vitrine" some quando não há mais produtos nessa situação; se era o
+  // selecionado, volta a valer "Todos" (senão a lista ficaria vazia sem botão para desfazer).
+  const activeFilter: Filter = filter === "hiddenByPlan" && hiddenByPlanCount === 0 ? "all" : filter;
+
   const visibleProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
     return products.filter((p) => {
-      if (filter === "active" && !p.isActive) return false;
-      if (filter === "inactive" && p.isActive) return false;
-      if (filter === "outOfStock" && p.stockQuantity > 0) return false;
-      if (filter === "hiddenByPlan" && !p.hiddenByPlan) return false;
+      if (activeFilter === "active" && !p.isActive) return false;
+      if (activeFilter === "inactive" && p.isActive) return false;
+      if (activeFilter === "outOfStock" && p.stockQuantity > 0) return false;
+      if (activeFilter === "hiddenByPlan" && !p.hiddenByPlan) return false;
       if (!term) return true;
       return p.name.toLowerCase().includes(term) || (p.sku ?? "").toLowerCase().includes(term);
     });
-  }, [products, search, filter]);
-
-  const hiddenByPlanCount = useMemo(() => products.filter((p) => p.hiddenByPlan).length, [products]);
-  const filters = hiddenByPlanCount > 0 ? [...FILTERS, HIDDEN_BY_PLAN_FILTER] : FILTERS;
+  }, [products, search, activeFilter]);
 
   function handleSaved(product: Product) {
     setProducts((prev) => {
@@ -157,8 +160,8 @@ export default function ProductsShopkeeper() {
                 key={f.key}
                 type="button"
                 onClick={() => setFilter(f.key)}
-                aria-pressed={filter === f.key}
-                className={chip(filter === f.key)}
+                aria-pressed={activeFilter === f.key}
+                className={chip(activeFilter === f.key)}
               >
                 {f.label}
               </button>
