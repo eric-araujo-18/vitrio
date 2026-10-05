@@ -19,8 +19,17 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [store, setStore] = useState<Store | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "notfound" | "error">("loading");
+  // Resultado da busca da loja, guardado junto com o slug: se o slug muda, volta a "carregando"
+  // sem precisar de setState dentro do efeito.
+  const [loaded, setLoaded] = useState<{
+    slug: string;
+    store: Store | null;
+    status: "ready" | "notfound" | "error";
+  } | null>(null);
+  const current = loaded?.slug === slug ? loaded : null;
+  const store = current?.store ?? null;
+  const status = current?.status ?? "loading";
+  const setStore = (updated: Store) => setLoaded({ slug, store: updated, status: "ready" });
 
   useEffect(() => {
     if (authLoading) return;
@@ -36,16 +45,14 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
     }
 
     let active = true;
-    setStatus("loading");
 
     getMyStores()
       .then(({ dados }) => {
         if (!active) return;
         const found = dados?.find((s) => s.slug === slug) ?? null;
-        setStore(found);
-        setStatus(found ? "ready" : "notfound");
+        setLoaded({ slug, store: found, status: found ? "ready" : "notfound" });
       })
-      .catch(() => active && setStatus("error"));
+      .catch(() => active && setLoaded({ slug, store: null, status: "error" }));
 
     return () => {
       active = false;

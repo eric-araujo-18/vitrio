@@ -43,9 +43,16 @@ export default function AddressesDrawer({ onClose }: AddressesDrawerProps) {
     }
   }, []);
 
+  // Carga inicial (setState só no retorno da promessa; "load" fica para recarregar depois das ações).
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    unwrap(getMyAddresses())
+      .then((data) => active && setAddresses(data))
+      .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar endereços."));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !saving && onClose();

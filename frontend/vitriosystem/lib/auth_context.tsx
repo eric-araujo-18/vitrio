@@ -22,6 +22,18 @@ function isStorefrontPath() {
   return typeof window !== "undefined" && /^\/store\/[^/]+\/client/.test(window.location.pathname);
 }
 
+// Recupera o usuário da sessão atual: pede um access token novo a partir do cookie
+// HttpOnly e, se houver sessão, busca os dados do usuário. Nunca lança erro.
+async function loadSessionUser(): Promise<User | null> {
+  try {
+    if (!(await bootstrapSession())) return null;
+    const { dados } = await getMe();
+    return dados;
+  } catch {
+    return null;
+  }
+}
+
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
@@ -54,23 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-
-    try {
-      // Tenta recuperar um access token novo a partir do cookie HttpOnly.
-      const hasSession = await bootstrapSession();
-
-      if (!hasSession) {
-        setUser(null);
-        return;
-      }
-
-      const { dados } = await getMe();
-      setUser(dados);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    setUser(await loadSessionUser());
+    setLoading(false);
   }, []);
 
   const reloadUser = useCallback(async () => {
@@ -82,9 +79,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Boot da aplicação: "loading" já começa true, então só grava o resultado.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let active = true;
+    loadSessionUser().then((u) => {
+      if (!active) return;
+      setUser(u);
+      setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     function handleUnauthorized() {

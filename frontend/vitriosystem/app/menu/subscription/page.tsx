@@ -117,7 +117,7 @@ function SubscriptionContent() {
       if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Não foi possível trocar de plano.");
 
       if (res.dados.checkoutUrl) {
-        window.location.href = res.dados.checkoutUrl; // vai pagar no Mercado Pago
+        window.location.assign(res.dados.checkoutUrl); // vai pagar no Mercado Pago
         return;
       }
       setMine(await unwrap(getMySubscription()));

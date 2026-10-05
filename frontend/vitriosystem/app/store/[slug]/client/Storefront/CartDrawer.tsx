@@ -82,22 +82,25 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
 
   useLockBodyScroll();
 
-  // Cliente logado: preenche os dados do checkout com os da conta
-  // (só os campos ainda vazios, pra não apagar o que ele já digitou).
-  useEffect(() => {
-    if (!user) return;
-    setName((v) => v || user.name);
-    setEmail((v) => v || user.email);
-    setPhone((v) => v || (user.phone ? formatPhone(user.phone) : ""));
-  }, [user]);
+  // Quando o cliente entra, sai ou troca de conta: descarta os endereços da conta anterior e
+  // preenche o checkout com os dados da conta (só os campos ainda vazios, pra não apagar o
+  // que ele já digitou). Ajuste feito durante a renderização, não num efeito.
+  const userId = user?.id ?? null;
+  const [syncedUserId, setSyncedUserId] = useState<number | null>(null);
+  if (userId !== syncedUserId) {
+    setSyncedUserId(userId);
+    setSavedAddresses(null);
+    setSelectedAddress("new");
+    if (user) {
+      setName((v) => v || user.name);
+      setEmail((v) => v || user.email);
+      setPhone((v) => v || (user.phone ? formatPhone(user.phone) : ""));
+    }
+  }
 
   // Logado: carrega os endereços salvos e já seleciona o padrão.
   useEffect(() => {
-    if (!user) {
-      setSavedAddresses(null);
-      setSelectedAddress("new");
-      return;
-    }
+    if (!user) return;
     let active = true;
     getMyAddresses()
       .then(({ dados }) => {

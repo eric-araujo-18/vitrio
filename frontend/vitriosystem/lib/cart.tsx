@@ -68,14 +68,19 @@ export function CartProvider({ storeSlug, children }: { storeSlug: string; child
   const [items, setItems] = useState<CartItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
-  // Lê do localStorage só no cliente (evita divergência de hidratação).
+  // Lê do localStorage só no cliente, depois da hidratação (ler na renderização faria o HTML
+  // do servidor, sempre vazio, divergir do cliente). Sincronizar com um sistema externo na
+  // montagem é justamente o caso de uso de um efeito, por isso a regra é desligada aqui.
   useEffect(() => {
+    let stored: CartItem[] = [];
     try {
       const raw = localStorage.getItem(storageKey);
-      setItems(raw ? normalize(JSON.parse(raw)) : []);
+      stored = raw ? normalize(JSON.parse(raw)) : [];
     } catch {
-      setItems([]);
+      // storage inacessível ou JSON inválido: começa vazio
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentário acima
+    setItems(stored);
     setHydrated(true);
   }, [storageKey]);
 

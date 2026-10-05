@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, CornerDownRight, LoaderCircle, Pencil, Plus, Tags, Trash2, X } from "lucide-react";
 import { unwrap } from "@/lib/api";
 import {
@@ -31,8 +31,13 @@ export default function CategoriesPage() {
   const { store } = useShopkeeperStore();
 
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Cada loja + recarga é uma carga; está carregando até ela chegar.
+  const [reloadCount, setReloadCount] = useState(0);
+  const loadKey = `${store.id}|${reloadCount}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== loadKey;
 
   // Formulário de criação
   const [newName, setNewName] = useState("");
@@ -51,21 +56,20 @@ export default function CategoriesPage() {
 
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setCategories(await unwrap(getCategoriesByStore(store.id)));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar categorias.");
-    } finally {
-      setLoading(false);
-    }
-  }, [store.id]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    unwrap(getCategoriesByStore(store.id))
+      .then((data) => {
+        if (!active) return;
+        setCategories(data);
+        setError(null);
+      })
+      .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar categorias."))
+      .finally(() => active && setLoadedKey(loadKey));
+    return () => {
+      active = false;
+    };
+  }, [store.id, loadKey]);
 
   const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
@@ -159,7 +163,7 @@ export default function CategoriesPage() {
       await unwrap(deleteCategory(c.id));
       setConfirmDeleteId(null);
       // Recarrega: subcategorias mudam de pai no backend.
-      await load();
+      setReloadCount((n) => n + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao excluir categoria.");
     } finally {

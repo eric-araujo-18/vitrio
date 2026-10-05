@@ -36,7 +36,9 @@ export default function ProductsShopkeeper() {
   const { store } = useShopkeeperStore();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carregando até a lista desta loja chegar (derivado, sem setState dentro do efeito).
+  const [loadedFor, setLoadedFor] = useState<number | null>(null);
+  const loading = loadedFor !== store.id;
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -49,21 +51,20 @@ export default function ProductsShopkeeper() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const loadProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setProducts(await unwrap(getProductsByStore(store.id)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar produtos.");
-    } finally {
-      setLoading(false);
-    }
-  }, [store.id]);
-
   useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+    let active = true;
+    unwrap(getProductsByStore(store.id))
+      .then((data) => {
+        if (!active) return;
+        setProducts(data);
+        setError(null);
+      })
+      .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar produtos."))
+      .finally(() => active && setLoadedFor(store.id));
+    return () => {
+      active = false;
+    };
+  }, [store.id]);
 
   const visibleProducts = useMemo(() => {
     const term = search.trim().toLowerCase();

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   ChevronDown,
   Inbox,
@@ -41,8 +41,13 @@ export default function OrdersPage() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Cada combinação loja + filtro + "atualizar" é uma carga; está carregando até ela chegar.
+  const [reloadCount, setReloadCount] = useState(0);
+  const loadKey = `${store.id}|${filter}|${reloadCount}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== loadKey;
   const [expanded, setExpanded] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
@@ -50,21 +55,20 @@ export default function OrdersPage() {
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [rowError, setRowError] = useState<{ id: number; message: string } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setOrders(await unwrap(getOrdersByStore(store.id, filter === "all" ? undefined : filter)));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
-    } finally {
-      setLoading(false);
-    }
-  }, [store.id, filter]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    unwrap(getOrdersByStore(store.id, filter === "all" ? undefined : filter))
+      .then((data) => {
+        if (!active) return;
+        setOrders(data);
+        setError(null);
+      })
+      .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar pedidos."))
+      .finally(() => active && setLoadedKey(loadKey));
+    return () => {
+      active = false;
+    };
+  }, [store.id, filter, loadKey]);
 
   function toggleExpanded(id: number) {
     setExpanded((cur) => (cur === id ? null : id));
@@ -99,7 +103,12 @@ export default function OrdersPage() {
         title="Pedidos"
         subtitle="Pedidos feitos pela sua vitrine. O estoque é reservado quando o pedido chega."
         actions={
-          <button type="button" onClick={load} disabled={loading} className={btnSecondary}>
+          <button
+            type="button"
+            onClick={() => setReloadCount((n) => n + 1)}
+            disabled={loading}
+            className={btnSecondary}
+          >
             <RefreshCw size={16} aria-hidden="true" className={loading ? "animate-spin" : ""} />
             Atualizar
           </button>
