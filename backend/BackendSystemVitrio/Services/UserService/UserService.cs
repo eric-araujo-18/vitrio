@@ -12,10 +12,12 @@ namespace BackendSystemVitrio.Services.UserService
         private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled);
 
         private readonly AppDbContext _context;
+        private readonly ILogger<UserService> _logger;
 
-        public UserService(AppDbContext context)
+        public UserService(AppDbContext context, ILogger<UserService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<Response<UserDto>> UpdateUserAsync(int userId, UpdateUserDto dto)
@@ -61,7 +63,8 @@ namespace BackendSystemVitrio.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<UserDto>.Fail($"Erro ao atualizar perfil: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar perfil");
+                return Response<UserDto>.Fail("Erro ao atualizar perfil. Tente novamente.");
             }
         }
 
@@ -76,8 +79,8 @@ namespace BackendSystemVitrio.Services.UserService
                 if (!PasswordHelper.VerifyPasswordHash(dto.CurrentPassword, user.PasswordHash, user.PasswordSalt))
                     return Response<string>.Fail("Senha atual incorreta.");
 
-                if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < 6)
-                    return Response<string>.Fail("A nova senha precisa ter pelo menos 6 caracteres.");
+                if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < PasswordHelper.MinLength)
+                    return Response<string>.Fail($"A nova senha precisa ter pelo menos {PasswordHelper.MinLength} caracteres.");
 
                 PasswordHelper.CreatePasswordHash(dto.NewPassword, out var hash, out var salt);
                 user.PasswordHash = hash;
@@ -94,7 +97,8 @@ namespace BackendSystemVitrio.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail($"Erro ao alterar senha: {ex.Message}");
+                _logger.LogError(ex, "Erro ao alterar senha");
+                return Response<string>.Fail("Erro ao alterar senha. Tente novamente.");
             }
         }
     }

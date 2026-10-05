@@ -8,7 +8,8 @@ namespace BackendSystemVitrio.Models
         public required int UserId { get; set; }
         public User? User { get; set; }
 
-        // Valor aleatório opaco — não é um JWT, só um identificador único.
+        // Hash SHA-256 (hex) do valor aleatório opaco que fica no cookie. O valor em si
+        // nunca é salvo (ver AuthService.HashToken). Não é um JWT.
         public required string Token { get; set; }
 
         public DateTime ExpiresAt { get; set; }

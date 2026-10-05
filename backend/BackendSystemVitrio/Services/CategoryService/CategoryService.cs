@@ -10,10 +10,12 @@ namespace BackendSystemVitrio.Services.CategoryService
     public class CategoryService : ICategoryService
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<CategoryService> _logger;
 
-        public CategoryService(AppDbContext context)
+        public CategoryService(AppDbContext context, ILogger<CategoryService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<Response<List<CategoryResponseDto>>> GetCategoriesByStoreAsync(int storeId, int userId)
@@ -43,7 +45,8 @@ namespace BackendSystemVitrio.Services.CategoryService
             }
             catch (Exception ex)
             {
-                return Response<List<CategoryResponseDto>>.Fail($"Erro ao recuperar categorias: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar categorias");
+                return Response<List<CategoryResponseDto>>.Fail("Erro ao recuperar categorias. Tente novamente.");
             }
         }
 
@@ -83,7 +86,8 @@ namespace BackendSystemVitrio.Services.CategoryService
             }
             catch (Exception ex)
             {
-                return Response<CategoryResponseDto>.Fail($"Erro ao criar categoria: {ex.Message}");
+                _logger.LogError(ex, "Erro ao criar categoria");
+                return Response<CategoryResponseDto>.Fail("Erro ao criar categoria. Tente novamente.");
             }
         }
 
@@ -138,7 +142,8 @@ namespace BackendSystemVitrio.Services.CategoryService
             }
             catch (Exception ex)
             {
-                return Response<CategoryResponseDto>.Fail($"Erro ao atualizar categoria: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar categoria");
+                return Response<CategoryResponseDto>.Fail("Erro ao atualizar categoria. Tente novamente.");
             }
         }
 
@@ -172,7 +177,8 @@ namespace BackendSystemVitrio.Services.CategoryService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail($"Erro ao excluir categoria: {ex.Message}");
+                _logger.LogError(ex, "Erro ao excluir categoria");
+                return Response<string>.Fail("Erro ao excluir categoria. Tente novamente.");
             }
         }
 

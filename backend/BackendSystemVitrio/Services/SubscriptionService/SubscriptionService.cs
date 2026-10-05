@@ -123,7 +123,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<List<PlanDto>>.Fail($"Erro ao buscar planos: {ex.Message}");
+                _logger.LogError(ex, "Erro ao buscar planos");
+                return Response<List<PlanDto>>.Fail("Erro ao buscar planos. Tente novamente.");
             }
         }
 
@@ -175,7 +176,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<MySubscriptionDto>.Fail($"Erro ao buscar assinatura: {ex.Message}");
+                _logger.LogError(ex, "Erro ao buscar assinatura");
+                return Response<MySubscriptionDto>.Fail("Erro ao buscar assinatura. Tente novamente.");
             }
         }
 
@@ -236,7 +238,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<CheckoutResultDto>.Fail($"Erro ao trocar de plano: {ex.Message}");
+                _logger.LogError(ex, "Erro ao trocar de plano");
+                return Response<CheckoutResultDto>.Fail("Erro ao trocar de plano. Tente novamente.");
             }
         }
 
@@ -299,7 +302,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<MySubscriptionDto>.Fail($"Erro ao cancelar assinatura: {ex.Message}");
+                _logger.LogError(ex, "Erro ao cancelar assinatura");
+                return Response<MySubscriptionDto>.Fail("Erro ao cancelar assinatura. Tente novamente.");
             }
         }
 
@@ -332,7 +336,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<MySubscriptionDto>.Fail($"Erro ao verificar a assinatura: {ex.Message}");
+                _logger.LogError(ex, "Erro ao verificar a assinatura");
+                return Response<MySubscriptionDto>.Fail("Erro ao verificar a assinatura. Tente novamente.");
             }
         }
 
@@ -369,7 +374,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             }
             catch (Exception ex)
             {
-                return Response<MySubscriptionDto>.Fail($"Erro ao alterar plano: {ex.Message}");
+                _logger.LogError(ex, "Erro ao alterar plano");
+                return Response<MySubscriptionDto>.Fail("Erro ao alterar plano. Tente novamente.");
             }
         }
 

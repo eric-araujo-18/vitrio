@@ -11,10 +11,12 @@ namespace BackendSystemVitrio.Services.StoreService
     public class StoreService : IStoreService
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<StoreService> _logger;
 
-        public StoreService(AppDbContext context)
+        public StoreService(AppDbContext context, ILogger<StoreService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<Response<List<StoreDto>>> GetStoresByUserAsync(int userId)
@@ -34,7 +36,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<List<StoreDto>>.Fail($"Erro ao recuperar lojas do usuário: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar lojas do usuário");
+                return Response<List<StoreDto>>.Fail("Erro ao recuperar lojas do usuário. Tente novamente.");
             }
         }
 
@@ -50,7 +53,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<StoreDto>.Fail($"Erro ao recuperar loja: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar loja");
+                return Response<StoreDto>.Fail("Erro ao recuperar loja. Tente novamente.");
             }
         }
 
@@ -109,7 +113,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<StoreDto>.Fail($"Erro ao criar loja: {ex.Message}");
+                _logger.LogError(ex, "Erro ao criar loja");
+                return Response<StoreDto>.Fail("Erro ao criar loja. Tente novamente.");
             }
         }
 
@@ -179,7 +184,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<StoreDto>.Fail($"Erro ao atualizar loja: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar loja");
+                return Response<StoreDto>.Fail("Erro ao atualizar loja. Tente novamente.");
             }
         }
 
@@ -201,7 +207,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail($"Erro ao excluir loja: {ex.Message}");
+                _logger.LogError(ex, "Erro ao excluir loja");
+                return Response<string>.Fail("Erro ao excluir loja. Tente novamente.");
             }
         }
 
@@ -233,7 +240,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<List<StoreDto>>.Fail($"Erro ao colocar a loja no ar: {ex.Message}");
+                _logger.LogError(ex, "Erro ao colocar a loja no ar");
+                return Response<List<StoreDto>>.Fail("Erro ao colocar a loja no ar. Tente novamente.");
             }
         }
 
@@ -280,7 +288,8 @@ namespace BackendSystemVitrio.Services.StoreService
             }
             catch (Exception ex)
             {
-                return Response<StoreDashboardDto>.Fail($"Erro ao carregar o painel: {ex.Message}");
+                _logger.LogError(ex, "Erro ao carregar o painel");
+                return Response<StoreDashboardDto>.Fail("Erro ao carregar o painel. Tente novamente.");
             }
         }
 

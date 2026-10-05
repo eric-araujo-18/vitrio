@@ -43,7 +43,7 @@ function ChangePasswordForm() {
     e.preventDefault();
     setError(null);
 
-    if (next.length < 6) return setError("A nova senha precisa ter pelo menos 6 caracteres.");
+    if (next.length < 8) return setError("A nova senha precisa ter pelo menos 8 caracteres.");
     if (next !== confirm) return setError("A confirmação não confere com a nova senha.");
 
     setLoading(true);
@@ -105,7 +105,7 @@ function ChangePasswordForm() {
           onChange={setNext}
           autoComplete="new-password"
           disabled={busy}
-          hint="Mínimo de 6 caracteres."
+          hint="Mínimo de 8 caracteres."
         />
 
         <PasswordField

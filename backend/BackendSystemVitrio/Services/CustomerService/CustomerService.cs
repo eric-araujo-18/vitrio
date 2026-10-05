@@ -14,10 +14,12 @@ namespace BackendSystemVitrio.Services.CustomerService
         private const int MaxLabelLength = 40;
 
         private readonly AppDbContext _context;
+        private readonly ILogger<CustomerService> _logger;
 
-        public CustomerService(AppDbContext context)
+        public CustomerService(AppDbContext context, ILogger<CustomerService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         // Padrão primeiro, depois os mais recentes.
@@ -36,7 +38,8 @@ namespace BackendSystemVitrio.Services.CustomerService
             }
             catch (Exception ex)
             {
-                return Response<List<AddressResponseDto>>.Fail($"Erro ao buscar endereços: {ex.Message}");
+                _logger.LogError(ex, "Erro ao buscar endereços");
+                return Response<List<AddressResponseDto>>.Fail("Erro ao buscar endereços. Tente novamente.");
             }
         }
 
@@ -78,7 +81,8 @@ namespace BackendSystemVitrio.Services.CustomerService
             }
             catch (Exception ex)
             {
-                return Response<AddressResponseDto>.Fail($"Erro ao salvar endereço: {ex.Message}");
+                _logger.LogError(ex, "Erro ao salvar endereço");
+                return Response<AddressResponseDto>.Fail("Erro ao salvar endereço. Tente novamente.");
             }
         }
 
@@ -119,7 +123,8 @@ namespace BackendSystemVitrio.Services.CustomerService
             }
             catch (Exception ex)
             {
-                return Response<AddressResponseDto>.Fail($"Erro ao atualizar endereço: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar endereço");
+                return Response<AddressResponseDto>.Fail("Erro ao atualizar endereço. Tente novamente.");
             }
         }
 
@@ -152,7 +157,8 @@ namespace BackendSystemVitrio.Services.CustomerService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail($"Erro ao remover endereço: {ex.Message}");
+                _logger.LogError(ex, "Erro ao remover endereço");
+                return Response<string>.Fail("Erro ao remover endereço. Tente novamente.");
             }
         }
 

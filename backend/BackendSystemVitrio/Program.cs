@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -14,6 +15,7 @@ using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.StoreService;
 using BackendSystemVitrio.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -117,6 +119,20 @@ builder.Services.AddCors(options =>
     });
 });
 
+// ===== Proxy reverso (nginx, Cloudflare Tunnel, load balancer...) =====
+// Atrás de um proxy, a conexão chega do IP do proxy. Sem ler X-Forwarded-For, o rate limit
+// "por IP" viraria um limite único para todos os clientes, e sem X-Forwarded-Proto a API acharia
+// que a requisição é HTTP e redirecionaria para HTTPS sem necessidade.
+// Só os cabeçalhos vindos de proxies confiáveis são aceitos (senão qualquer um mandaria um
+// X-Forwarded-For falso para fugir do rate limit). Localhost já é confiável por padrão;
+// outros IPs vão em ReverseProxy:KnownProxies.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var ip in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [])
+        options.KnownProxies.Add(IPAddress.Parse(ip));
+});
+
 // Limite de pedidos públicos: 10 por minuto por IP.
 builder.Services.AddRateLimiter(options =>
 {
@@ -139,7 +155,7 @@ builder.Services.AddRateLimiter(options =>
                 ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 60,
+                PermitLimit = 6,
                 Window = TimeSpan.FromMinutes(10),
                 QueueLimit = 0
             }));
@@ -159,12 +175,28 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+// Aplica as migrations pendentes ao subir, para não depender de rodar
+// "dotnet ef database update" à mão a cada deploy.
+if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", false))
+{
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+}
+
+// Primeiro de todos: o resto do pipeline (rate limit, HTTPS, logs) precisa do IP e do esquema reais.
+app.UseForwardedHeaders();
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+else
+{
+    // Diz ao navegador para usar sempre HTTPS neste domínio.
+    app.UseHsts();
 }
 
 app.UseHttpsRedirection();

@@ -16,10 +16,12 @@ namespace BackendSystemVitrio.Services.OrderService
         private const int MaxQuantityPerItem = 999;
 
         private readonly AppDbContext _context;
+        private readonly ILogger<OrderService> _logger;
 
-        public OrderService(AppDbContext context)
+        public OrderService(AppDbContext context, ILogger<OrderService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         // ===== Painel do lojista =====
@@ -46,7 +48,8 @@ namespace BackendSystemVitrio.Services.OrderService
             }
             catch (Exception ex)
             {
-                return Response<List<OrderResponseDto>>.Fail($"Erro ao recuperar pedidos: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar pedidos");
+                return Response<List<OrderResponseDto>>.Fail("Erro ao recuperar pedidos. Tente novamente.");
             }
         }
 
@@ -65,7 +68,8 @@ namespace BackendSystemVitrio.Services.OrderService
             }
             catch (Exception ex)
             {
-                return Response<OrderResponseDto>.Fail($"Erro ao recuperar pedido: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar pedido");
+                return Response<OrderResponseDto>.Fail("Erro ao recuperar pedido. Tente novamente.");
             }
         }
 
@@ -129,7 +133,8 @@ namespace BackendSystemVitrio.Services.OrderService
             }
             catch (Exception ex)
             {
-                return Response<OrderResponseDto>.Fail($"Erro ao atualizar pedido: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar pedido");
+                return Response<OrderResponseDto>.Fail("Erro ao atualizar pedido. Tente novamente.");
             }
         }
 
@@ -190,7 +195,8 @@ namespace BackendSystemVitrio.Services.OrderService
             }
             catch (Exception ex)
             {
-                return Response<List<CustomerOrderDto>>.Fail($"Erro ao buscar seus pedidos: {ex.Message}");
+                _logger.LogError(ex, "Erro ao buscar seus pedidos");
+                return Response<List<CustomerOrderDto>>.Fail("Erro ao buscar seus pedidos. Tente novamente.");
             }
         }
 
@@ -353,7 +359,8 @@ namespace BackendSystemVitrio.Services.OrderService
             }
             catch (Exception ex)
             {
-                return Response<OrderCreatedDto>.Fail($"Erro ao enviar pedido: {ex.Message}");
+                _logger.LogError(ex, "Erro ao enviar pedido");
+                return Response<OrderCreatedDto>.Fail("Erro ao enviar pedido. Tente novamente.");
             }
         }
 

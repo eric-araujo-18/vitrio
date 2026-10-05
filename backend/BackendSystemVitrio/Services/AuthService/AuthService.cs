@@ -16,11 +16,13 @@ namespace BackendSystemVitrio.Services.AuthService
     public class AuthService : IAuthService
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<AuthService> _logger;
         private readonly IConfiguration _configuration;
 
-        public AuthService(AppDbContext context, IConfiguration configuration)
+        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger)
         {
             _context = context;
+            _logger = logger;
             _configuration = configuration;
         }
 
@@ -57,10 +59,10 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
+                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < PasswordHelper.MinLength)
                 {
                     response.Dados = null;
-                    response.Mensagem = "A senha precisa ter pelo menos 6 caracteres.";
+                    response.Mensagem = $"A senha precisa ter pelo menos {PasswordHelper.MinLength} caracteres.";
                     response.Status = false;
                     return response;
                 }
@@ -100,7 +102,8 @@ namespace BackendSystemVitrio.Services.AuthService
             catch (Exception ex)
             {
                 response.Dados = null;
-                response.Mensagem = "Erro ao cadastrar usuário: " + ex.Message;
+                _logger.LogError(ex, "Erro ao cadastrar usuário");
+                response.Mensagem = "Erro ao cadastrar usuário. Tente novamente.";
                 response.Status = false;
             }
 
@@ -121,8 +124,8 @@ namespace BackendSystemVitrio.Services.AuthService
                 if (!IsValidEmail(email))
                     return Response<string>.Fail("Informe um e-mail válido.");
 
-                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
-                    return Response<string>.Fail("A senha precisa ter pelo menos 6 caracteres.");
+                if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < PasswordHelper.MinLength)
+                    return Response<string>.Fail($"A senha precisa ter pelo menos {PasswordHelper.MinLength} caracteres.");
 
                 string? phone = null;
                 if (!string.IsNullOrWhiteSpace(dto.Phone))
@@ -153,7 +156,8 @@ namespace BackendSystemVitrio.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail("Erro ao criar conta: " + ex.Message);
+                _logger.LogError(ex, "Erro ao criar conta");
+                return Response<string>.Fail("Erro ao criar conta. Tente novamente.");
             }
         }
 
@@ -214,6 +218,15 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
+                // Senha no formato antigo: aproveita que ela foi digitada certa e regrava
+                // no formato novo (salvo junto com o refresh token logo abaixo).
+                if (PasswordHelper.NeedsRehash(user.PasswordSalt))
+                {
+                    PasswordHelper.CreatePasswordHash(dto.Password, out var newHash, out var newSalt);
+                    user.PasswordHash = newHash;
+                    user.PasswordSalt = newSalt;
+                }
+
                 // Clientes da vitrine agora também entram por aqui. O que separa o que cada
                 // um pode fazer é o papel no token: os controllers do painel exigem
                 // [Authorize(Roles = "Shopkeeper,Admin")].
@@ -232,7 +245,8 @@ namespace BackendSystemVitrio.Services.AuthService
             catch (Exception ex)
             {
                 response.Dados = null;
-                response.Mensagem = "Erro ao validar credenciais: " + ex.Message;
+                _logger.LogError(ex, "Erro ao validar credenciais");
+                response.Mensagem = "Erro ao validar credenciais. Tente novamente.";
                 response.Status = false;
             }
 
@@ -253,9 +267,10 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
+                var tokenHash = HashToken(refreshToken);
                 var stored = await _context.RefreshToken
                     .Include(rt => rt.User)
-                    .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+                    .FirstOrDefaultAsync(rt => rt.Token == tokenHash);
 
                 if (stored is null || !stored.IsActive || stored.User is null)
                 {
@@ -269,7 +284,8 @@ namespace BackendSystemVitrio.Services.AuthService
 
                 // Rotação "in-place": atualiza o mesmo registro em vez de criar um novo,
                 // evitando acumular linhas revogadas no banco a cada refresh.
-                stored.Token = GenerateSecureRandomToken();
+                var newToken = GenerateSecureRandomToken();
+                stored.Token = HashToken(newToken);
                 stored.ExpiresAt = DateTime.UtcNow.AddDays(days);
 
                 var newAccessToken = GenerateAccessToken(stored.User);
@@ -279,7 +295,7 @@ namespace BackendSystemVitrio.Services.AuthService
                 response.Dados = new AuthResultDto
                 {
                     AccessToken = newAccessToken,
-                    RefreshToken = stored.Token
+                    RefreshToken = newToken
                 };
                 response.Mensagem = "Sessão renovada.";
                 response.Status = true;
@@ -287,7 +303,8 @@ namespace BackendSystemVitrio.Services.AuthService
             catch (Exception ex)
             {
                 response.Dados = null;
-                response.Mensagem = "Erro ao renovar sessão: " + ex.Message;
+                _logger.LogError(ex, "Erro ao renovar sessão");
+                response.Mensagem = "Erro ao renovar sessão. Tente novamente.";
                 response.Status = false;
             }
 
@@ -308,8 +325,9 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
+                var tokenHash = HashToken(refreshToken);
                 var stored = await _context.RefreshToken
-                    .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+                    .FirstOrDefaultAsync(rt => rt.Token == tokenHash);
 
                 if (stored is not null && stored.RevokedAt is null)
                 {
@@ -324,7 +342,8 @@ namespace BackendSystemVitrio.Services.AuthService
             catch (Exception ex)
             {
                 response.Dados = null;
-                response.Mensagem = "Erro ao encerrar sessão: " + ex.Message;
+                _logger.LogError(ex, "Erro ao encerrar sessão");
+                response.Mensagem = "Erro ao encerrar sessão. Tente novamente.";
                 response.Status = false;
             }
 
@@ -367,6 +386,7 @@ namespace BackendSystemVitrio.Services.AuthService
 
         // Longo (padrão: 7 dias) — string opaca aleatória, salva no banco pra
         // poder ser revogada (logout, rotação, etc). Não é um JWT.
+        // No banco fica só o hash (HashToken): quem ler a tabela não consegue usar a sessão.
         private async Task<string> CreateRefreshTokenAsync(int userId)
         {
             var days = int.TryParse(_configuration["Jwt:RefreshTokenExpirationDays"], out var d) ? d : 7;
@@ -376,7 +396,7 @@ namespace BackendSystemVitrio.Services.AuthService
             var refreshToken = new RefreshToken
             {
                 UserId = userId,
-                Token = tokenValue,
+                Token = HashToken(tokenValue),
                 ExpiresAt = DateTime.UtcNow.AddDays(days)
             };
 
@@ -385,6 +405,10 @@ namespace BackendSystemVitrio.Services.AuthService
 
             return tokenValue;
         }
+
+        // O token tem 512 bits aleatórios, então SHA-256 simples basta (não precisa de PBKDF2).
+        private static string HashToken(string token)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
         private static string GenerateSecureRandomToken()
         {

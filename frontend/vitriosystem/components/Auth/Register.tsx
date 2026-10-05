@@ -31,8 +31,8 @@ export default function Register() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres.");
+    if (password.length < 8) {
+      setError("A senha precisa ter pelo menos 8 caracteres.");
       return;
     }
 
@@ -128,11 +128,11 @@ export default function Register() {
           icon={Lock}
           type="password"
           autoComplete="new-password"
-          placeholder="Mínimo de 6 caracteres"
+          placeholder="Mínimo de 8 caracteres"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={6}
+          minLength={8}
         />
 
         <AuthInput

@@ -18,10 +18,12 @@ namespace BackendSystemVitrio.Services.ProductService
         private static readonly Regex HexColor = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
         private readonly AppDbContext _context;
+        private readonly ILogger<ProductService> _logger;
 
-        public ProductService(AppDbContext context)
+        public ProductService(AppDbContext context, ILogger<ProductService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<Response<List<ProductResponseDto>>> GetProductsByStoreAsync(int storeId, int userId)
@@ -44,7 +46,8 @@ namespace BackendSystemVitrio.Services.ProductService
             }
             catch (Exception ex)
             {
-                return Response<List<ProductResponseDto>>.Fail($"Erro ao recuperar produtos: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar produtos");
+                return Response<List<ProductResponseDto>>.Fail("Erro ao recuperar produtos. Tente novamente.");
             }
         }
 
@@ -65,7 +68,8 @@ namespace BackendSystemVitrio.Services.ProductService
             }
             catch (Exception ex)
             {
-                return Response<ProductResponseDto>.Fail($"Erro ao recuperar produto: {ex.Message}");
+                _logger.LogError(ex, "Erro ao recuperar produto");
+                return Response<ProductResponseDto>.Fail("Erro ao recuperar produto. Tente novamente.");
             }
         }
 
@@ -137,7 +141,8 @@ namespace BackendSystemVitrio.Services.ProductService
             }
             catch (Exception ex)
             {
-                return Response<ProductResponseDto>.Fail($"Erro ao criar produto: {ex.Message}");
+                _logger.LogError(ex, "Erro ao criar produto");
+                return Response<ProductResponseDto>.Fail("Erro ao criar produto. Tente novamente.");
             }
         }
 
@@ -218,7 +223,8 @@ namespace BackendSystemVitrio.Services.ProductService
             }
             catch (Exception ex)
             {
-                return Response<ProductResponseDto>.Fail($"Erro ao atualizar produto: {ex.Message}");
+                _logger.LogError(ex, "Erro ao atualizar produto");
+                return Response<ProductResponseDto>.Fail("Erro ao atualizar produto. Tente novamente.");
             }
         }
 
@@ -239,7 +245,8 @@ namespace BackendSystemVitrio.Services.ProductService
             }
             catch (Exception ex)
             {
-                return Response<string>.Fail($"Erro ao excluir produto: {ex.Message}");
+                _logger.LogError(ex, "Erro ao excluir produto");
+                return Response<string>.Fail("Erro ao excluir produto. Tente novamente.");
             }
         }
 

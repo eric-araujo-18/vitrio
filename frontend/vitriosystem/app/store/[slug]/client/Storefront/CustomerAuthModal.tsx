@@ -71,7 +71,7 @@ export default function CustomerAuthModal({
       if (name.trim().length < 2) return setError("Informe seu nome.");
       if (!isvalidEmail(cleanEmail)) return setError("Informe um e-mail válido.");
       if (phone && !isValidPhone(phone)) return setError("Telefone inválido. Use DDD + número.");
-      if (password.length < 6) return setError("A senha precisa ter pelo menos 6 caracteres.");
+      if (password.length < 8) return setError("A senha precisa ter pelo menos 8 caracteres.");
     } else {
       if (!cleanEmail) return setError("Informe seu e-mail.");
       if (!password) return setError("Informe sua senha.");
@@ -199,7 +199,7 @@ export default function CustomerAuthModal({
             </Field>
           )}
 
-          <Field id="ca-password" label="Senha" hint={isRegister ? "(mínimo 6 caracteres)" : undefined}>
+          <Field id="ca-password" label="Senha" hint={isRegister ? "(mínimo 8 caracteres)" : undefined}>
             <input
               id="ca-password"
               type="password"
