@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus } from "lucide-react";
 import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
+import { useOnSubscriptionChanged } from "@/components/InitialPage/SubscriptionWatcher/useSubscriptionWatcher";
 import { getMyStores, unwrap, type Store } from "@/lib/api";
 import {
   StoreCard,
@@ -42,6 +43,14 @@ function StoresOverview() {
       .then(setStores)
       .catch(() => setStores([]));
   }, []);
+
+  // Pagamento de assinatura confirmado: lojas fora do ar pelo plano podem ter voltado.
+  const reloadStores = useCallback(() => {
+    unwrap(getMyStores())
+      .then(setStores)
+      .catch(() => {});
+  }, []);
+  useOnSubscriptionChanged(reloadStores);
 
   const isEmpty = stores !== null && stores.length === 0;
 

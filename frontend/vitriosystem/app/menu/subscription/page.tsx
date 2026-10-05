@@ -7,6 +7,9 @@ import { unwrap } from "@/lib/api";
 import {
   SUBSCRIPTION_STATUS_LABELS,
   cancelSubscription,
+  forgetCheckoutPlan,
+  readCheckoutPlan,
+  rememberCheckoutPlan,
   startCheckout,
   syncSubscription,
   getMySubscription,
@@ -29,33 +32,9 @@ const FAST_POLL_COUNT = 12; // 1 minuto
 const SLOW_POLL_MS = 30_000;
 const SLOW_POLL_COUNT = 30; // 15 minutos
 
-// Plano escolhido ao sair para o checkout (mesma aba). Na volta, diz qual plano estava sendo
-// pago mesmo se o Mercado Pago já tiver confirmado antes de a página carregar.
-const CHECKOUT_PLAN_KEY = "vitrio_checkout_plan";
-
-function rememberCheckout(planCode: string) {
-  try {
-    sessionStorage.setItem(CHECKOUT_PLAN_KEY, planCode);
-  } catch {
-    // storage bloqueado: na volta só não dá para mostrar o aviso de confirmação
-  }
-}
-
-function readCheckoutPlan(): string | null {
-  try {
-    return sessionStorage.getItem(CHECKOUT_PLAN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-// Fim da volta do checkout: esquece o plano guardado e tira o ?preapproval_id da URL.
+// Fim do checkout (pago ou não): esquece o plano lembrado e tira o ?preapproval_id da URL.
 function forgetCheckout() {
-  try {
-    sessionStorage.removeItem(CHECKOUT_PLAN_KEY);
-  } catch {
-    // nada a fazer
-  }
+  forgetCheckoutPlan();
   if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
 }
 
@@ -145,7 +124,9 @@ function SubscriptionContent() {
     let active = true;
     // Voltou do checkout (o back_url traz ?preapproval_id=...)
     const returning = new URLSearchParams(window.location.search).has("preapproval_id");
-    const checkoutPlan = returning ? readCheckoutPlan() : null;
+    // Plano lembrado ao sair para o checkout (vale em qualquer aba, por 2h): mesmo que o
+    // pagamento já tenha sido confirmado antes de a página abrir, dá para avisar o resultado.
+    const checkoutPlan = readCheckoutPlan();
     if (checkoutPlan) pendingPlanRef.current = checkoutPlan;
 
     fetchState(false)
@@ -231,7 +212,7 @@ function SubscriptionContent() {
       if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Não foi possível trocar de plano.");
 
       if (res.dados.checkoutUrl) {
-        rememberCheckout(option.plan.code); // para saber, na volta, qual plano estava sendo pago
+        rememberCheckoutPlan(option.plan.code); // para saber, depois, qual plano estava sendo pago
         window.location.assign(res.dados.checkoutUrl); // vai pagar no Mercado Pago
         return;
       }

@@ -30,6 +30,17 @@ namespace BackendSystemVitrio.DTO
         public required string Label { get; set; }   // texto do botão / etiqueta
     }
 
+    // Resumo leve (GET /api/Subscription/check) para as telas fora da página de assinatura
+    // saberem quando um pagamento pendente foi confirmado.
+    public class SubscriptionCheckDto
+    {
+        public required string PlanCode { get; set; }
+        public required string PlanName { get; set; }
+
+        // Plano do checkout ainda não confirmado (null = nenhum)
+        public string? PendingPlanCode { get; set; }
+    }
+
     public class MySubscriptionDto
     {
         // Plano que está valendo agora (o grátis, se a assinatura estiver suspensa/cancelada)

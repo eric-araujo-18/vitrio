@@ -34,6 +34,9 @@ namespace BackendSystemVitrio.Services.SubscriptionService
     {
         private const int GraceDays = 7;
         private static readonly TimeSpan ActiveResyncInterval = TimeSpan.FromHours(6);
+        // Com checkout pendente o lojista está esperando a confirmação: confere com mais frequência.
+        private static readonly TimeSpan PendingSyncInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan IdleSyncInterval = TimeSpan.FromMinutes(1);
 
         private readonly AppDbContext _context;
         private readonly IMercadoPagoClient _mercadoPago;
@@ -318,7 +321,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                     .Select(s => new { s.GatewaySubscriptionId, s.PendingGatewaySubscriptionId, s.LastSyncedAt })
                     .FirstOrDefaultAsync();
 
-                var recentlySynced = sub?.LastSyncedAt is not null && sub.LastSyncedAt > DateTime.UtcNow.AddMinutes(-1);
+                var interval = sub?.PendingGatewaySubscriptionId is not null ? PendingSyncInterval : IdleSyncInterval;
+                var recentlySynced = sub?.LastSyncedAt is not null && sub.LastSyncedAt > DateTime.UtcNow - interval;
 
                 if (sub is not null && (force || !recentlySynced))
                 {
@@ -339,6 +343,48 @@ namespace BackendSystemVitrio.Services.SubscriptionService
             {
                 _logger.LogError(ex, "Erro ao verificar a assinatura");
                 return Response<MySubscriptionDto>.Fail("Erro ao verificar a assinatura. Tente novamente.");
+            }
+        }
+
+        public async Task<Response<SubscriptionCheckDto>> CheckPendingAsync(int userId)
+        {
+            try
+            {
+                var sub = await _context.Subscription
+                    .AsNoTracking()
+                    .Where(s => s.UserId == userId)
+                    .Select(s => new { s.PendingGatewaySubscriptionId, s.LastSyncedAt })
+                    .FirstOrDefaultAsync();
+
+                // Só fala com o Mercado Pago se houver checkout pendente (e não conferido há pouco).
+                if (sub?.PendingGatewaySubscriptionId is not null &&
+                    (sub.LastSyncedAt is null || sub.LastSyncedAt < DateTime.UtcNow - PendingSyncInterval))
+                {
+                    try { await SyncPreapprovalAsync(sub.PendingGatewaySubscriptionId); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Falha ao conferir o checkout pendente do usuário {UserId}", userId);
+                        _context.ChangeTracker.Clear();
+                    }
+                }
+
+                var plan = await _context.GetEffectivePlanAsync(userId);
+                var pendingPlanCode = await _context.Subscription
+                    .Where(s => s.UserId == userId && s.PendingPlan != null)
+                    .Select(s => s.PendingPlan!.Code)
+                    .FirstOrDefaultAsync();
+
+                return Response<SubscriptionCheckDto>.Ok(new SubscriptionCheckDto
+                {
+                    PlanCode = plan.Code,
+                    PlanName = plan.Name,
+                    PendingPlanCode = pendingPlanCode,
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao verificar a assinatura");
+                return Response<SubscriptionCheckDto>.Fail("Erro ao verificar a assinatura. Tente novamente.");
             }
         }
 
@@ -660,6 +706,32 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Falha ao conferir assinatura {Id}", id);
+                    _context.ChangeTracker.Clear();
+                }
+            }
+        }
+
+        // Checkouts abertos nas últimas 2 horas: confere a cada minuto (chamado pelo
+        // SubscriptionMaintenanceService). Assim o plano muda logo depois do pagamento mesmo
+        // que o webhook não chegue e nenhuma tela esteja aberta.
+        public async Task SyncRecentCheckoutsAsync()
+        {
+            var now = DateTime.UtcNow;
+            var ids = await _context.Subscription
+                .Where(s => s.PendingGatewaySubscriptionId != null &&
+                            s.PendingSince != null && s.PendingSince > now.AddHours(-2) &&
+                            (s.LastSyncedAt == null || s.LastSyncedAt < now.AddSeconds(-50)))
+                .OrderBy(s => s.LastSyncedAt)
+                .Select(s => s.PendingGatewaySubscriptionId!)
+                .Take(50)
+                .ToListAsync();
+
+            foreach (var id in ids)
+            {
+                try { await SyncPreapprovalAsync(id); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Falha ao conferir checkout recente {Id}", id);
                     _context.ChangeTracker.Clear();
                 }
             }

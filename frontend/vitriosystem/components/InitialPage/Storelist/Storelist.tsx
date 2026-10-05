@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useOnSubscriptionChanged } from "../SubscriptionWatcher/useSubscriptionWatcher";
 import Link from "next/link";
 import { LoaderCircle, Plus, Power, TriangleAlert } from "lucide-react";
 import { getMyStores, goOnlineStore, unwrap, type Store } from "@/lib/api";
@@ -44,6 +45,14 @@ export default function Storelist() {
       cancelled = true;
     };
   }, []);
+
+  // Pagamento de assinatura confirmado: lojas fora do ar pelo plano podem ter voltado.
+  const reloadStores = useCallback(() => {
+    getMyStores()
+      .then(({ dados }) => dados && setStores(dados))
+      .catch(() => {});
+  }, []);
+  useOnSubscriptionChanged(reloadStores);
 
   function handleStoreCreated(store: Store) {
     // Insere a nova loja no topo da lista sem precisar refazer o fetch.

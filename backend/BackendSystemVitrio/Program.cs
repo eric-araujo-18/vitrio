@@ -210,9 +210,12 @@ else
 {
     // Diz ao navegador para usar sempre HTTPS neste domínio.
     app.UseHsts();
-}
 
-app.UseHttpsRedirection();
+    // Só fora do desenvolvimento: em dev o frontend chama http://localhost:5020, e com o perfil
+    // "https" (necessário para o túnel do Mercado Pago) o redirecionamento 307 para a porta
+    // HTTPS quebra o CORS e o navegador mostra "não foi possível conectar".
+    app.UseHttpsRedirection();
+}
 
 app.UseCors(CorsPolicy);
 

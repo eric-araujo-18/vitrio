@@ -21,6 +21,10 @@ namespace BackendSystemVitrio.Services.SubscriptionService
         // force = false: pula se já conferiu há menos de 1 minuto (usado ao abrir a página).
         Task<Response<MySubscriptionDto>> SyncMineAsync(int userId, bool force);
 
+        // Verificação leve para as outras telas: se houver checkout pendente, confere no
+        // Mercado Pago e devolve só o plano atual e o pendente.
+        Task<Response<SubscriptionCheckDto>> CheckPendingAsync(int userId);
+
         // Admin: troca manual de plano, sem cobrança
         Task<Response<MySubscriptionDto>> AdminSetPlanAsync(int userId, string planCode);
 
@@ -34,5 +38,8 @@ namespace BackendSystemVitrio.Services.SubscriptionService
 
         // Suspende quem passou da tolerância e confere checkouts pendentes
         Task RunMaintenanceAsync();
+
+        // Confere os checkouts abertos há pouco (roda a cada minuto, sem depender do webhook)
+        Task SyncRecentCheckoutsAsync();
     }
 }

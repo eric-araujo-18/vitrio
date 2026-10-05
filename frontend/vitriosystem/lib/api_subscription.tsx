@@ -89,3 +89,58 @@ export function cancelSubscription() {
 export function syncSubscription(force = false) {
   return request<MySubscription>(`/api/Subscription/sync?force=${force}`, "POST", undefined, true);
 }
+// ===== Verificação leve (outras telas do painel) =====
+
+export interface SubscriptionCheck {
+  planCode: string;
+  planName: string;
+  /** Plano do checkout ainda não confirmado (null = nenhum) */
+  pendingPlanCode: string | null;
+}
+
+/** Se houver checkout pendente, o backend confere no Mercado Pago antes de responder. */
+export function checkSubscription() {
+  return request<SubscriptionCheck>("/api/Subscription/check", "GET", undefined, true);
+}
+
+/** Disparado no window quando um pagamento de assinatura é confirmado (telas recarregam o que depende do plano). */
+export const SUBSCRIPTION_CHANGED_EVENT = "vitrio:subscription-changed";
+
+// ===== Checkout em andamento =====
+// O plano escolhido ao sair para o Mercado Pago fica lembrado neste navegador (todas as abas)
+// por 2 horas. Serve para saber, depois, se o pagamento pendente que sumiu foi pago (o plano
+// virou esse) ou se o checkout foi cancelado/expirou.
+
+const CHECKOUT_PLAN_KEY = "vitrio_checkout_plan";
+const CHECKOUT_MEMORY_MS = 2 * 60 * 60 * 1000;
+
+export function rememberCheckoutPlan(planCode: string) {
+  try {
+    localStorage.setItem(CHECKOUT_PLAN_KEY, JSON.stringify({ planCode, at: Date.now() }));
+  } catch {
+    // storage bloqueado: só não dá para mostrar o aviso de confirmação depois
+  }
+}
+
+export function readCheckoutPlan(): string | null {
+  try {
+    const raw = localStorage.getItem(CHECKOUT_PLAN_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { planCode?: unknown; at?: unknown };
+    if (typeof saved.planCode !== "string" || typeof saved.at !== "number" || Date.now() - saved.at > CHECKOUT_MEMORY_MS) {
+      localStorage.removeItem(CHECKOUT_PLAN_KEY);
+      return null;
+    }
+    return saved.planCode;
+  } catch {
+    return null;
+  }
+}
+
+export function forgetCheckoutPlan() {
+  try {
+    localStorage.removeItem(CHECKOUT_PLAN_KEY);
+  } catch {
+    // nada a fazer
+  }
+}

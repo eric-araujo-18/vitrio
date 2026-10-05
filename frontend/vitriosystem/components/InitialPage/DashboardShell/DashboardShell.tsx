@@ -1,10 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import SidebarInitialPage from "@/components/InitialPage/Sidebar/SidebarInitialPage";
 import Header from "@/components/InitialPage/Header/Header";
-import { useRequireAuth } from "@/lib/auth_context";
+import { useSubscriptionWatcher } from "@/components/InitialPage/SubscriptionWatcher/useSubscriptionWatcher";
+import SubscriptionConfirmedToast from "@/components/InitialPage/SubscriptionWatcher/SubscriptionConfirmedToast";
+import { isStaff, useRequireAuth } from "@/lib/auth_context";
 import type { User } from "@/lib/api";
 
 interface DashboardShellProps {
@@ -25,6 +28,11 @@ interface DashboardShellProps {
 */
 export default function DashboardShell({ title, subtitle, children }: DashboardShellProps) {
   const { user, loading } = useRequireAuth();
+  const pathname = usePathname();
+
+  // Pagamento de assinatura confirmado enquanto o lojista usa outra tela (a própria página
+  // de assinatura já faz essa conferência e mostra o aviso dela).
+  const subscriptionWatcher = useSubscriptionWatcher(isStaff(user) && pathname !== "/menu/subscription");
 
   if (loading) {
     return (
@@ -63,6 +71,13 @@ export default function DashboardShell({ title, subtitle, children }: DashboardS
           {children(user)}
         </section>
       </main>
+
+      {subscriptionWatcher.confirmedPlan && (
+        <SubscriptionConfirmedToast
+          planName={subscriptionWatcher.confirmedPlan}
+          onDismiss={subscriptionWatcher.dismiss}
+        />
+      )}
     </div>
   );
 }

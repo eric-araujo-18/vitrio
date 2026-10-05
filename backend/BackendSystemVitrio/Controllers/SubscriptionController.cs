@@ -50,6 +50,12 @@ namespace BackendSystemVitrio.Controllers
         public async Task<IActionResult> GetMine()
             => Ok(await _subscriptionService.GetMySubscriptionAsync(User.GetUserId()));
 
+        // GET /api/Subscription/check -> verificação leve usada pelas outras telas do painel
+        [HttpGet("check")]
+        [Authorize(Roles = "Shopkeeper,Admin")]
+        public async Task<IActionResult> Check()
+            => Ok(await _subscriptionService.CheckPendingAsync(User.GetUserId()));
+
         // POST /api/Subscription/checkout  { "planCode": "basic" }
         // Executa a ação que o backend permite para esse plano (ver DecideAction):
         // devolve o link do Mercado Pago, ou null quando não precisa pagar agora.
