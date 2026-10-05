@@ -35,7 +35,7 @@ import { useAuth } from "@/lib/auth_context";
 import ProductModal from "./Storefront/ProductModal";
 import CartDrawer from "./Storefront/CartDrawer";
 import CustomerAuthModal from "./Storefront/CustomerAuthModal";
-import MyOrdersDrawer from "./Storefront/Myordersdrawer";
+import MyOrdersDrawer from "./Storefront/MyOrdersDrawer";
 import AddressesDrawer from "./Storefront/AddressesDrawer";
 import { ColorDot } from "./Storefront/Ui";
 

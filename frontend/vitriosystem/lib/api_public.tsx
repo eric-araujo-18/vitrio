@@ -1,7 +1,7 @@
 // ===== Vitrine pública (sem login) =====
 
 import { request } from "./api";
-import type { AddressPayload } from "./api_custumer";
+import type { AddressPayload } from "./api_customer";
 import type { ProductCategory, ProductImage, ProductVariant } from "./api_product";
 
 export interface PublicStore {

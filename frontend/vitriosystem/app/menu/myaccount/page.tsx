@@ -2,7 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
-import EditProfileForm from "@/components/InitialPage/ProfileEdit/Editprofileform";
+import EditProfileForm from "@/components/InitialPage/ProfileEdit/EditProfileForm";
 import { useAuth } from "@/lib/auth_context";
 import { formatPhone } from "@/lib/validators";
 

@@ -63,3 +63,8 @@ Thumbs.db
 ## EF Core
 *.dbmdl
 *.edmx.diagram
+
+## Claude 
+
+.CLAUDE.md
+CLAUDE.md

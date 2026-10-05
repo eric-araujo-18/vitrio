@@ -17,7 +17,7 @@ import { createPublicOrder, type OrderCreated, type PublicStore } from "@/lib/ap
 import { unwrap } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { useAuth } from "@/lib/auth_context";
-import { createAddress, getMyAddresses } from "@/lib/api_custumer";
+import { createAddress, getMyAddresses } from "@/lib/api_customer";
 import {
   EMPTY_ADDRESS,
   addressLine1,

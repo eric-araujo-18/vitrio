@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, CircleAlert, LoaderCircle, MapPin, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { unwrap } from "@/lib/api";
-import { createAddress, deleteAddress, getMyAddresses, updateAddress } from "@/lib/api_custumer";
+import { createAddress, deleteAddress, getMyAddresses, updateAddress } from "@/lib/api_customer";
 import {
   EMPTY_ADDRESS,
   addressLine1,
