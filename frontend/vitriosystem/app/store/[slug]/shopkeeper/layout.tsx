@@ -8,7 +8,7 @@ import { getMyStores, ROLES, type Store } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
 import SidebarShopkeeper from "./components/Sidebar/SidebarShopkeeper";
 import { ShopkeeperStoreProvider } from "./components/ShopkeeperStoreContext";
-import { btnPrimary } from "../shopkeeper/components/Ui";
+import { WarningBox, btnPrimary } from "../shopkeeper/components/Ui";
 
 // Layout comum de TODAS as telas do painel da loja:
 // 1) exige login de lojista/admin
@@ -87,7 +87,21 @@ export default function ShopkeeperLayout({ children }: { children: ReactNode }) 
     <ShopkeeperStoreProvider value={{ store, setStore }}>
       <div className="flex min-h-screen bg-surface text-on-surface antialiased">
         <SidebarShopkeeper />
-        <main className="min-w-0 flex-1 animate-[fadeIn_0.3s_ease] p-5 md:px-10 md:py-8">{children}</main>
+        <main className="min-w-0 flex-1 animate-[fadeIn_0.3s_ease] p-5 md:px-10 md:py-8">
+          {store.blockedByPlan && (
+            <div className="mb-5">
+              <WarningBox>
+                Esta loja está fora do ar e não recebe pedidos novos, porque seu plano permite menos lojas no ar do
+                que você tem. Os pedidos já feitos continuam aqui. Para colocá-la no ar, pause outra loja ou{" "}
+                <Link href="/menu/subscription" className="font-semibold underline">
+                  veja os planos
+                </Link>
+                .
+              </WarningBox>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
     </ShopkeeperStoreProvider>
   );

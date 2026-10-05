@@ -80,6 +80,7 @@ const BADGE_COLORS: Record<string, string> = {
   Canceled: "bg-slate-500/10 text-slate-600",
   Active: "bg-emerald-500/10 text-emerald-700",
   Inactive: "bg-slate-500/10 text-slate-600",
+  Blocked: "bg-red-500/10 text-red-700",
 };
 
 export function StatusBadge({ status, children }: { status: string; children: ReactNode }) {
@@ -141,6 +142,18 @@ export function ErrorBox({ children }: { children: ReactNode }) {
       className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-body-md text-red-700"
     >
       <CircleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+export function WarningBox({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-body-md text-amber-800"
+    >
+      <TriangleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
       <span>{children}</span>
     </div>
   );

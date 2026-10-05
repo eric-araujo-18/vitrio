@@ -70,6 +70,12 @@ export interface Store {
   tertiaryColor: string;
   isActive: boolean;
   creationDate: string;
+  /** Ativa, mas fora do ar porque passou do limite de lojas do plano atual. */
+  blockedByPlan: boolean;
+  /** Já há tantas lojas no ar quanto o plano permite: reativar uma pausada exige trocar (goOnlineStore). */
+  storeLimitReached: boolean;
+  /** Produtos visíveis por loja no plano atual (null = ilimitado). */
+  maxProductsPerStore: number | null;
 }
 
 export interface CreateStorePayload {
@@ -281,6 +287,11 @@ export function createStore(payload: CreateStorePayload) {
 
 export function updateStore(id: number, payload: UpdateStorePayload) {
   return request<Store>(`/api/Store/${id}`, "PUT", payload, true);
+}
+
+// Coloca a loja no ar e pausa as que passarem do limite do plano. Devolve todas as lojas atualizadas.
+export function goOnlineStore(id: number) {
+  return request<Store[]>(`/api/Store/${id}/go-online`, "POST", undefined, true);
 }
 
 export function deleteStore(id: number) {

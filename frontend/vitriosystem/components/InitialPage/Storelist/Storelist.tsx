@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
-import { getMyStores, type Store } from "@/lib/api";
+import Link from "next/link";
+import { LoaderCircle, Plus, Power, TriangleAlert } from "lucide-react";
+import { getMyStores, goOnlineStore, unwrap, type Store } from "@/lib/api";
 import CreateStoreModal from "./CreateStoreModal";
 import {
   StoreCard,
@@ -18,6 +19,10 @@ export default function Storelist() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Escolha de qual loja fica no ar quando o plano permite menos lojas do que o lojista tem
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [switchingId, setSwitchingId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +51,77 @@ export default function Storelist() {
     setShowCreateModal(false);
   }
 
+  async function handleGoOnline(id: number) {
+    setSwitchingId(id);
+    setError(null);
+    try {
+      setStores(await unwrap(goOnlineStore(id)));
+      setConfirmingId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao colocar a loja no ar.");
+    } finally {
+      setSwitchingId(null);
+    }
+  }
+
+  const hasBlocked = stores.some((s) => s.blockedByPlan);
+  const onlineNames = stores.filter((s) => s.isActive && !s.blockedByPlan).map((s) => s.name);
+
+  function planAction(store: Store) {
+    // Fora do ar pelo plano, ou pausada quando o limite de lojas no ar já está cheio.
+    const canSwitch = store.blockedByPlan || (!store.isActive && store.storeLimitReached);
+    if (!canSwitch) return undefined;
+
+    if (confirmingId !== store.id) {
+      return (
+        <button
+          type="button"
+          onClick={() => setConfirmingId(store.id)}
+          className="inline-flex items-center gap-1.5 text-label-md font-semibold text-primary-container hover:underline"
+        >
+          <Power size={15} aria-hidden="true" />
+          Deixar esta loja no ar
+        </button>
+      );
+    }
+
+    const busy = switchingId === store.id;
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-body-sm text-amber-900">
+        <p>
+          {onlineNames.length > 0 ? (
+            <>
+              <strong>{onlineNames.join(", ")}</strong> {onlineNames.length === 1 ? "será pausada" : "serão pausadas"}{" "}
+              para esta loja entrar no ar.
+            </>
+          ) : (
+            "Esta loja vai entrar no ar."
+          )}{" "}
+          Dá para trocar de novo quando quiser.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => handleGoOnline(store.id)}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary-container px-3 text-label-md font-semibold text-on-primary disabled:opacity-60"
+          >
+            {busy && <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />}
+            Confirmar
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingId(null)}
+            disabled={busy}
+            className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-label-md text-on-surface"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <StoresPanel
@@ -65,13 +141,31 @@ export default function Storelist() {
 
         {!loading && error && <StoresError message={error} />}
 
-        {!loading && !error && stores.length === 0 && (
+        {!loading && hasBlocked && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-body-md text-amber-800"
+          >
+            <TriangleAlert size={18} aria-hidden="true" className="mt-px shrink-0" />
+            <span>
+              Seu plano permite menos lojas no ar do que você tem. Escolha qual fica no ar em &quot;Deixar esta loja
+              no ar&quot;, ou{" "}
+              <Link href="/menu/subscription" className="font-semibold underline">
+                veja os planos
+              </Link>
+              . Nenhum dado é apagado.
+            </span>
+          </div>
+        )}
+
+        {!loading && stores.length === 0 && !error && (
           <StoresEmpty>
             Você ainda não tem nenhuma loja. Clique em &quot;Nova loja&quot; para criar a primeira.
           </StoresEmpty>
         )}
 
-        {!loading && !error && stores.map((store) => <StoreCard key={store.id} store={store} />)}
+        {!loading &&
+          stores.map((store) => <StoreCard key={store.id} store={store} planAction={planAction(store)} />)}
       </StoresPanel>
 
       {showCreateModal && (

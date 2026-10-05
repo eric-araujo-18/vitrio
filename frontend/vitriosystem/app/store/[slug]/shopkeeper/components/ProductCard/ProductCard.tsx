@@ -24,7 +24,7 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
   return (
     <div
       className={`group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/85 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-container/25 hover:shadow-[0_4px_6px_-1px_rgba(37,99,235,0.04),0_10px_24px_-4px_rgba(15,23,42,0.08)] ${
-        !product.isActive ? "opacity-70 hover:opacity-90" : ""
+        !product.isActive || product.hiddenByPlan ? "opacity-70 hover:opacity-90" : ""
       }`}
     >
       {/* Imagem */}
@@ -60,6 +60,14 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
           {!product.isActive && (
             <span className="inline-flex items-center rounded-md border border-white/50 bg-slate-600/90 px-2 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur-sm">
               Inativo
+            </span>
+          )}
+          {product.hiddenByPlan && (
+            <span
+              title="Passou do limite de produtos do seu plano"
+              className="inline-flex items-center rounded-md border border-white/50 bg-amber-600/95 px-2 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur-sm"
+            >
+              Fora da vitrine
             </span>
           )}
           {hasPromo && discount > 0 && (

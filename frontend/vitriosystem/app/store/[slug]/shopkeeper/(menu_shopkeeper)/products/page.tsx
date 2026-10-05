@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Package, Plus, Search, SearchX } from "lucide-react";
 import { unwrap } from "@/lib/api";
 import { deleteProduct, getProductsByStore, type Product } from "@/lib/api_product";
@@ -13,12 +14,13 @@ import {
   ErrorBox,
   LoadingState,
   PageHeader,
+  WarningBox,
   btnPrimary,
   chip,
   input,
 } from "../../components/Ui";
 
-type Filter = "all" | "active" | "inactive" | "outOfStock";
+type Filter = "all" | "active" | "inactive" | "outOfStock" | "hiddenByPlan";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Todos" },
@@ -26,6 +28,9 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "inactive", label: "Inativos" },
   { key: "outOfStock", label: "Sem estoque" },
 ];
+
+// Só aparece quando há produtos acima do limite do plano.
+const HIDDEN_BY_PLAN_FILTER: { key: Filter; label: string } = { key: "hiddenByPlan", label: "Fora da vitrine" };
 
 export default function ProductsShopkeeper() {
   const { store } = useShopkeeperStore();
@@ -66,10 +71,14 @@ export default function ProductsShopkeeper() {
       if (filter === "active" && !p.isActive) return false;
       if (filter === "inactive" && p.isActive) return false;
       if (filter === "outOfStock" && p.stockQuantity > 0) return false;
+      if (filter === "hiddenByPlan" && !p.hiddenByPlan) return false;
       if (!term) return true;
       return p.name.toLowerCase().includes(term) || (p.sku ?? "").toLowerCase().includes(term);
     });
   }, [products, search, filter]);
+
+  const hiddenByPlanCount = useMemo(() => products.filter((p) => p.hiddenByPlan).length, [products]);
+  const filters = hiddenByPlanCount > 0 ? [...FILTERS, HIDDEN_BY_PLAN_FILTER] : FILTERS;
 
   function handleSaved(product: Product) {
     setProducts((prev) => {
@@ -142,7 +151,7 @@ export default function ProductsShopkeeper() {
           </div>
 
           <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 md:mx-0 md:px-0 md:pb-0">
-            {FILTERS.map((f) => (
+            {filters.map((f) => (
               <button
                 key={f.key}
                 type="button"
@@ -154,6 +163,20 @@ export default function ProductsShopkeeper() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {hiddenByPlanCount > 0 && (
+        <div className="mb-4">
+          <WarningBox>
+            Seu plano permite até {store.maxProductsPerStore} produtos visíveis por loja, então{" "}
+            {hiddenByPlanCount} produto(s) ativo(s) estão fora da vitrine. Para escolher quais aparecem, desative os
+            que não quer mostrar ou{" "}
+            <Link href="/menu/subscription" className="font-semibold underline">
+              veja os planos
+            </Link>
+            .
+          </WarningBox>
         </div>
       )}
 

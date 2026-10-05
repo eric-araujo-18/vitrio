@@ -115,6 +115,9 @@ namespace BackendSystemVitrio.DTO
         public bool IsActive { get; set; }
         public bool IsFeatured { get; set; }
 
+        // Ativo, mas fora da vitrine porque a loja passou do limite de produtos do plano.
+        public bool HiddenByPlan { get; set; }
+
         public string? ColorName { get; set; }
         public string? ColorHex { get; set; }
         public Guid? ColorGroupId { get; set; }

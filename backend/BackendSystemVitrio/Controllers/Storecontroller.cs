@@ -43,6 +43,12 @@ namespace BackendSystemVitrio.Controllers
         public async Task<IActionResult> Update(int id, UpdateStoreDto dto)
             => Ok(await _storeService.UpdateAsync(id, User.GetUserId(), dto));
 
+        // POST /api/Store/{id}/go-online -> coloca esta loja no ar e pausa as que passarem
+        // do limite do plano. Devolve a lista de lojas atualizada.
+        [HttpPost("{id:int}/go-online")]
+        public async Task<IActionResult> GoOnline(int id)
+            => Ok(await _storeService.GoOnlineAsync(id, User.GetUserId()));
+
         // DELETE /api/Store/{id} (soft delete)
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)

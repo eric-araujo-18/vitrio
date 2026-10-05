@@ -14,6 +14,16 @@ namespace BackendSystemVitrio.DTO
         public required string TertiaryColor { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreationDate { get; set; }
+
+        // Ativa, mas fora do ar porque passou do limite de lojas do plano atual.
+        public bool BlockedByPlan { get; set; }
+
+        // O lojista já tem tantas lojas ativas quanto o plano permite no ar: reativar uma
+        // loja pausada só é possível trocando (POST /api/Store/{id}/go-online).
+        public bool StoreLimitReached { get; set; }
+
+        // Produtos visíveis por loja no plano atual (null = ilimitado).
+        public int? MaxProductsPerStore { get; set; }
     }
 
     // Números da tela inicial do painel do lojista.

@@ -35,6 +35,8 @@ export interface Product {
   stockQuantity: number;
   isActive: boolean;
   isFeatured: boolean;
+  /** Ativo, mas fora da vitrine porque a loja passou do limite de produtos do plano. */
+  hiddenByPlan: boolean;
   /** Cor desta peça. Produtos com o mesmo colorGroupId são a mesma peça em outras cores. */
   colorName: string | null;
   colorHex: string | null;

@@ -26,8 +26,10 @@ namespace BackendSystemVitrio.Services.StoreService
                     .OrderByDescending(s => s.CreationDate)
                     .ToListAsync();
 
+                var limits = await GetPlanLimitsAsync(userId);
+
                 return Response<List<StoreDto>>.Ok(
-                    stores.Select(ToDto).ToList(),
+                    stores.Select(s => ToDto(s, limits)).ToList(),
                     "Lojas do usuário recuperadas com sucesso.");
             }
             catch (Exception ex)
@@ -44,7 +46,7 @@ namespace BackendSystemVitrio.Services.StoreService
                 if (store is null)
                     return Response<StoreDto>.Fail("Loja não encontrada.");
 
-                return Response<StoreDto>.Ok(ToDto(store), "Loja recuperada com sucesso.");
+                return Response<StoreDto>.Ok(ToDto(store, await GetPlanLimitsAsync(userId)), "Loja recuperada com sucesso.");
             }
             catch (Exception ex)
             {
@@ -103,7 +105,7 @@ namespace BackendSystemVitrio.Services.StoreService
                 _context.Store.Add(store);
                 await _context.SaveChangesAsync();
 
-                return Response<StoreDto>.Ok(ToDto(store), "Loja criada com sucesso.");
+                return Response<StoreDto>.Ok(ToDto(store, await GetPlanLimitsAsync(userId)), "Loja criada com sucesso.");
             }
             catch (Exception ex)
             {
@@ -157,11 +159,23 @@ namespace BackendSystemVitrio.Services.StoreService
                 if (dto.PrimaryColor is not null) store.PrimaryColor = dto.PrimaryColor;
                 if (dto.SecondaryColor is not null) store.SecondaryColor = dto.SecondaryColor;
                 if (dto.TertiaryColor is not null) store.TertiaryColor = dto.TertiaryColor;
+                if (dto.IsActive == true && !store.IsActive)
+                {
+                    // Reativar conta no limite de lojas no ar do plano.
+                    var plan = await _context.GetEffectivePlanAsync(userId);
+                    var activeCount = await _context.Store.CountAsync(s =>
+                        s.UserId == userId && s.IsActive && s.DeletionDate == null);
+                    if (activeCount >= plan.MaxStores)
+                        return Response<StoreDto>.Fail(
+                            $"Seu plano {plan.Name} permite {plan.MaxStores} {(plan.MaxStores == 1 ? "loja" : "lojas")} no ar. " +
+                            "Pause outra loja antes de reativar esta, ou veja os planos em Assinatura.");
+                }
+
                 if (dto.IsActive.HasValue) store.IsActive = dto.IsActive.Value;
 
                 await _context.SaveChangesAsync();
 
-                return Response<StoreDto>.Ok(ToDto(store), "Loja atualizada com sucesso.");
+                return Response<StoreDto>.Ok(ToDto(store, await GetPlanLimitsAsync(userId)), "Loja atualizada com sucesso.");
             }
             catch (Exception ex)
             {
@@ -188,6 +202,38 @@ namespace BackendSystemVitrio.Services.StoreService
             catch (Exception ex)
             {
                 return Response<string>.Fail($"Erro ao excluir loja: {ex.Message}");
+            }
+        }
+
+        // É como o lojista escolhe qual loja fica no ar quando o plano permite menos lojas do
+        // que ele tem: esta loja vai para o ar e as outras ativas que passarem do limite são
+        // pausadas (ficam as mais antigas, na mesma ordem de StoresWithinPlan).
+        public async Task<Response<List<StoreDto>>> GoOnlineAsync(int storeId, int userId)
+        {
+            try
+            {
+                var store = await _context.FindOwnedStoreAsync(storeId, userId);
+                if (store is null)
+                    return Response<List<StoreDto>>.Fail("Loja não encontrada.");
+
+                var plan = await _context.GetEffectivePlanAsync(userId);
+                var others = await _context.Store
+                    .Where(s => s.UserId == userId && s.Id != storeId && s.IsActive && s.DeletionDate == null)
+                    .OrderBy(s => s.CreationDate)
+                    .ThenBy(s => s.Id)
+                    .ToListAsync();
+
+                foreach (var other in others.Skip(plan.MaxStores - 1))
+                    other.IsActive = false;
+
+                store.IsActive = true;
+                await _context.SaveChangesAsync();
+
+                return await GetStoresByUserAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                return Response<List<StoreDto>>.Fail($"Erro ao colocar a loja no ar: {ex.Message}");
             }
         }
 
@@ -270,8 +316,20 @@ namespace BackendSystemVitrio.Services.StoreService
         private static string? EmptyToNull(string? value)
             => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-        private static StoreDto ToDto(Store s) => new()
+        private record PlanLimits(HashSet<int> StoresWithinPlan, bool StoreLimitReached, int? MaxProductsPerStore);
+
+        private async Task<PlanLimits> GetPlanLimitsAsync(int userId)
         {
+            var plan = await _context.GetEffectivePlanAsync(userId);
+            var ids = await _context.StoresWithinPlan(userId, plan).Select(s => s.Id).ToListAsync();
+            return new PlanLimits(ids.ToHashSet(), ids.Count >= plan.MaxStores, plan.MaxProductsPerStore);
+        }
+
+        private static StoreDto ToDto(Store s, PlanLimits limits) => new()
+        {
+            BlockedByPlan = s.IsActive && !limits.StoresWithinPlan.Contains(s.Id),
+            StoreLimitReached = limits.StoreLimitReached,
+            MaxProductsPerStore = limits.MaxProductsPerStore,
             Id = s.Id,
             Name = s.Name,
             Slug = s.Slug,

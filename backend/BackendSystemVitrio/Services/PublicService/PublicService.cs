@@ -20,9 +20,11 @@ namespace BackendSystemVitrio.Services.PublicService
 
         public async Task<Response<PublicStoreDto>> GetStoreAsync(string slug)
         {
-            var store = await _context.FindPublicStoreAsync(slug);
-            if (store is null)
+            var found = await _context.FindPublicStoreAsync(slug);
+            if (found is null)
                 return Response<PublicStoreDto>.Fail(NotFound);
+
+            var store = found.Store;
 
             return Response<PublicStoreDto>.Ok(new PublicStoreDto
             {
@@ -39,14 +41,15 @@ namespace BackendSystemVitrio.Services.PublicService
 
         public async Task<Response<List<PublicCategoryDto>>> GetCategoriesAsync(string slug)
         {
-            var store = await _context.FindPublicStoreAsync(slug);
-            if (store is null)
+            var found = await _context.FindPublicStoreAsync(slug);
+            if (found is null)
                 return Response<List<PublicCategoryDto>>.Fail(NotFound);
 
             // Só categorias ativas que tenham pelo menos um produto visível.
+            var visibleIds = VisibleProducts(found).Select(p => p.Id);
             var categories = await _context.Category
-                .Where(c => c.StoreId == store.Id && c.IsActive && c.DeletionDate == null &&
-                            c.Products.Any(p => p.IsActive && p.DeletionDate == null))
+                .Where(c => c.StoreId == found.Store.Id && c.IsActive && c.DeletionDate == null &&
+                            c.Products.Any(p => visibleIds.Contains(p.Id)))
                 .OrderBy(c => c.Name)
                 .Select(c => new PublicCategoryDto
                 {
@@ -62,11 +65,11 @@ namespace BackendSystemVitrio.Services.PublicService
 
         public async Task<Response<List<PublicProductDto>>> GetProductsAsync(string slug, string? categorySlug, string? search)
         {
-            var store = await _context.FindPublicStoreAsync(slug);
-            if (store is null)
+            var found = await _context.FindPublicStoreAsync(slug);
+            if (found is null)
                 return Response<List<PublicProductDto>>.Fail(NotFound);
 
-            var query = VisibleProducts(store.Id);
+            var query = VisibleProducts(found);
 
             if (!string.IsNullOrWhiteSpace(categorySlug))
                 query = query.Where(p => p.Category != null && p.Category.Slug == categorySlug);
@@ -91,11 +94,11 @@ namespace BackendSystemVitrio.Services.PublicService
 
         public async Task<Response<PublicProductDto>> GetProductAsync(string slug, string productSlug)
         {
-            var store = await _context.FindPublicStoreAsync(slug);
-            if (store is null)
+            var found = await _context.FindPublicStoreAsync(slug);
+            if (found is null)
                 return Response<PublicProductDto>.Fail(NotFound);
 
-            var product = await VisibleProducts(store.Id)
+            var product = await VisibleProducts(found)
                 .Where(p => p.Slug == productSlug)
                 .Select(ToDtoExpression)
                 .FirstOrDefaultAsync();
@@ -105,14 +108,11 @@ namespace BackendSystemVitrio.Services.PublicService
                 : Response<PublicProductDto>.Ok(product);
         }
 
-        // Produto aparece na vitrine se estiver ativo, não excluído e,
-        // caso tenha categoria, se ela também estiver ativa.
-        private IQueryable<Product> VisibleProducts(int storeId)
-            => _context.Product.Where(p =>
-                p.StoreId == storeId &&
-                p.IsActive &&
-                p.DeletionDate == null &&
-                (p.Category == null || (p.Category.IsActive && p.Category.DeletionDate == null)));
+        // Produto aparece na vitrine se estiver ativo, não excluído, dentro do limite
+        // do plano do lojista e, caso tenha categoria, se ela também estiver ativa.
+        private IQueryable<Product> VisibleProducts(PublicStore found)
+            => _context.ProductsWithinPlan(found.Store.Id, found.Plan).Where(p =>
+                p.Category == null || (p.Category.IsActive && p.Category.DeletionDate == null));
 
         private static readonly Expression<Func<Product, PublicProductDto>> ToDtoExpression = p => new PublicProductDto
         {

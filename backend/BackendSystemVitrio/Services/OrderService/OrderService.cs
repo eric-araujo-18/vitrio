@@ -198,9 +198,11 @@ namespace BackendSystemVitrio.Services.OrderService
         {
             try
             {
-                var store = await _context.FindPublicStoreAsync(storeSlug);
-                if (store is null)
+                var found = await _context.FindPublicStoreAsync(storeSlug);
+                if (found is null)
                     return Response<OrderCreatedDto>.Fail("Loja não encontrada ou indisponível.");
+
+                var store = found.Store;
 
                 if (string.IsNullOrWhiteSpace(dto.CustomerName) || dto.CustomerName.Trim().Length < 2)
                     return Response<OrderCreatedDto>.Fail("Informe seu nome.");
@@ -253,13 +255,11 @@ namespace BackendSystemVitrio.Services.OrderService
                 await using var transaction = await _context.Database.BeginTransactionAsync();
 
                 // Preço SEMPRE vem do banco — nunca confiar no valor enviado pelo navegador.
-                var products = await _context.Product
+                // Só aceita produtos visíveis na vitrine (ativos e dentro do limite do plano).
+                var products = await _context.ProductsWithinPlan(store.Id, found.Plan)
                     .Include(p => p.Images)
                     .Include(p => p.Variants)
-                    .Where(p => productIds.Contains(p.Id) &&
-                                p.StoreId == store.Id &&
-                                p.IsActive &&
-                                p.DeletionDate == null)
+                    .Where(p => productIds.Contains(p.Id))
                     .ToDictionaryAsync(p => p.Id);
 
                 var order = new Order

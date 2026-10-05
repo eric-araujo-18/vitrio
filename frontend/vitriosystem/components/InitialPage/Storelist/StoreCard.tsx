@@ -45,7 +45,17 @@ export function StoresPanel({ title, action, children }: StoresPanelProps) {
    CARD DE LOJA
 =========================== */
 
-export function StoreCard({ store }: { store: Store }) {
+const STORE_STATUS = {
+  active: { label: "Ativa", badge: "bg-emerald-500/10 text-emerald-700", dot: "bg-emerald-500" },
+  paused: { label: "Pausada", badge: "bg-amber-500/10 text-amber-700", dot: "bg-amber-500" },
+  blocked: { label: "Fora do ar: limite do plano", badge: "bg-red-500/10 text-red-700", dot: "bg-red-500" },
+};
+
+// "planAction": conteúdo extra embaixo do status (ex.: botão para escolher esta loja
+// quando ela está fora do ar pelo limite do plano).
+export function StoreCard({ store, planAction }: { store: Store; planAction?: ReactNode }) {
+  const status = STORE_STATUS[!store.isActive ? "paused" : store.blockedByPlan ? "blocked" : "active"];
+
   return (
     <div className="group flex animate-[fadeIn_0.45s_ease] flex-col items-start gap-6 rounded-2xl border border-slate-200/85 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-container/25 hover:shadow-[0_4px_6px_-1px_rgba(37,99,235,0.04),0_10px_24px_-4px_rgba(15,23,42,0.08)] sm:p-6 md:flex-row md:items-center md:justify-between">
       <div className="flex min-w-0 items-center gap-5">
@@ -59,16 +69,12 @@ export function StoreCard({ store }: { store: Store }) {
             /store/{store.slug}
           </p>
           <span
-            className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-label-sm ${
-              store.isActive ? "bg-emerald-500/10 text-emerald-700" : "bg-amber-500/10 text-amber-700"
-            }`}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-label-sm ${status.badge}`}
           >
-            <span
-              aria-hidden="true"
-              className={`h-1.5 w-1.5 rounded-full ${store.isActive ? "bg-emerald-500" : "bg-amber-500"}`}
-            />
-            {store.isActive ? "Ativa" : "Pausada"}
+            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+            {status.label}
           </span>
+          {planAction && <div className="mt-3">{planAction}</div>}
         </div>
       </div>
 

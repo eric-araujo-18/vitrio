@@ -38,6 +38,8 @@ namespace BackendSystemVitrio.Services.ProductService
                     .Select(ToDtoExpression)
                     .ToListAsync();
 
+                await MarkHiddenByPlanAsync(storeId, userId, products);
+
                 return Response<List<ProductResponseDto>>.Ok(products, "Produtos recuperados com sucesso.");
             }
             catch (Exception ex)
@@ -55,9 +57,11 @@ namespace BackendSystemVitrio.Services.ProductService
                     .Select(ToDtoExpression)
                     .FirstOrDefaultAsync();
 
-                return product is null
-                    ? Response<ProductResponseDto>.Fail("Produto não encontrado.")
-                    : Response<ProductResponseDto>.Ok(product);
+                if (product is null)
+                    return Response<ProductResponseDto>.Fail("Produto não encontrado.");
+
+                await MarkHiddenByPlanAsync(product.StoreId, userId, [product]);
+                return Response<ProductResponseDto>.Ok(product);
             }
             catch (Exception ex)
             {
@@ -129,7 +133,7 @@ namespace BackendSystemVitrio.Services.ProductService
                 _context.Product.Add(product);
                 await _context.SaveChangesAsync();
 
-                return await ReloadAsDtoAsync(product.Id, "Produto criado com sucesso.");
+                return await ReloadAsDtoAsync(product.Id, userId, "Produto criado com sucesso.");
             }
             catch (Exception ex)
             {
@@ -161,6 +165,21 @@ namespace BackendSystemVitrio.Services.ProductService
 
                 if (dto.CategoryId.HasValue && !await CategoryExistsAsync(dto.CategoryId.Value, product.StoreId))
                     return Response<ProductResponseDto>.Fail("Categoria não encontrada nesta loja.");
+
+                if (dto.IsActive && !product.IsActive)
+                {
+                    // Reativar conta no limite de produtos visíveis do plano.
+                    var plan = await _context.GetEffectivePlanAsync(userId);
+                    if (plan.MaxProductsPerStore is int max)
+                    {
+                        var activeCount = await _context.Product.CountAsync(p =>
+                            p.StoreId == product.StoreId && p.IsActive && p.DeletionDate == null);
+                        if (activeCount >= max)
+                            return Response<ProductResponseDto>.Fail(
+                                $"Seu plano {plan.Name} permite até {max} produtos visíveis por loja. " +
+                                "Oculte outro produto antes de ativar este, ou veja os planos em Assinatura.");
+                    }
+                }
 
                 product.CategoryId = dto.CategoryId;
                 product.Name = dto.Name.Trim();
@@ -195,7 +214,7 @@ namespace BackendSystemVitrio.Services.ProductService
 
                 await _context.SaveChangesAsync();
 
-                return await ReloadAsDtoAsync(product.Id, "Produto atualizado com sucesso.");
+                return await ReloadAsDtoAsync(product.Id, userId, "Produto atualizado com sucesso.");
             }
             catch (Exception ex)
             {
@@ -395,14 +414,28 @@ namespace BackendSystemVitrio.Services.ProductService
         private static string? EmptyToNull(string? value)
             => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-        private async Task<Response<ProductResponseDto>> ReloadAsDtoAsync(int productId, string message)
+        private async Task<Response<ProductResponseDto>> ReloadAsDtoAsync(int productId, int userId, string message)
         {
             var dto = await _context.Product
                 .Where(p => p.Id == productId)
                 .Select(ToDtoExpression)
                 .FirstAsync();
 
+            await MarkHiddenByPlanAsync(dto.StoreId, userId, [dto]);
             return Response<ProductResponseDto>.Ok(dto, message);
+        }
+
+        // Marca os produtos ativos que estão fora da vitrine por passarem do limite do plano
+        // (ver ProductsWithinPlan).
+        private async Task MarkHiddenByPlanAsync(int storeId, int userId, IEnumerable<ProductResponseDto> products)
+        {
+            var plan = await _context.GetEffectivePlanAsync(userId);
+            if (plan.MaxProductsPerStore is null)
+                return;
+
+            var visibleIds = (await _context.ProductsWithinPlan(storeId, plan).Select(p => p.Id).ToListAsync()).ToHashSet();
+            foreach (var p in products)
+                p.HiddenByPlan = p.IsActive && !visibleIds.Contains(p.Id);
         }
 
         // Expressão reaproveitável: o EF traduz direto pra SQL (sem carregar a entidade inteira).

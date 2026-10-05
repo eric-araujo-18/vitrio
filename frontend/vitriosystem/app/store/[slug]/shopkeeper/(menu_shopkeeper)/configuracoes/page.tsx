@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -9,10 +10,11 @@ import {
   LoaderCircle,
   Pause,
   Play,
+  Power,
   Save,
   Trash2,
 } from "lucide-react";
-import { deleteStore, unwrap, updateStore } from "@/lib/api";
+import { deleteStore, goOnlineStore, unwrap, updateStore } from "@/lib/api";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
 import {
@@ -39,6 +41,7 @@ export default function ConfiguracoesPage() {
   const [cnpj, setCnpj] = useState(store.cnpj ? formatCnpj(store.cnpj) : "");
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [confirmingGoOnline, setConfirmingGoOnline] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -51,6 +54,17 @@ export default function ConfiguracoesPage() {
     typeof window !== "undefined" ? `${window.location.origin}/store/${store.slug}` : `/store/${store.slug}`;
 
   const deleteNameMatches = deleteConfirmText.trim() === store.name;
+
+  // Ativa e no ar / ativa mas fora do ar pelo limite de lojas do plano / pausada pelo lojista.
+  const visibility = !store.isActive
+    ? { badge: "Pending", label: "Pausada" }
+    : store.blockedByPlan
+      ? { badge: "Blocked", label: "Fora do ar" }
+      : { badge: "Active", label: "Ativa" };
+
+  // Pausada com o limite de lojas no ar cheio: só dá para reativar trocando com outra loja.
+  const reactivateNeedsSwitch = !store.isActive && store.storeLimitReached;
+  const canSwitch = store.blockedByPlan || reactivateNeedsSwitch;
 
   // Volta o botão "Copiado" para "Copiar" depois de um tempo.
   useEffect(() => {
@@ -101,6 +115,22 @@ export default function ConfiguracoesPage() {
       setStore(await unwrap(updateStore(store.id, { isActive: !store.isActive })));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao alterar status.");
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  // Escolhe esta loja para ficar no ar; as outras que passarem do limite do plano são pausadas.
+  async function handleGoOnline() {
+    setToggling(true);
+    setError(null);
+    try {
+      const stores = await unwrap(goOnlineStore(store.id));
+      const updated = stores.find((s) => s.id === store.id);
+      if (updated) setStore(updated);
+      setConfirmingGoOnline(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao colocar a loja no ar.");
     } finally {
       setToggling(false);
     }
@@ -229,33 +259,79 @@ export default function ConfiguracoesPage() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className={cardTitle}>Visibilidade</h2>
-                <StatusBadge status={store.isActive ? "Active" : "Pending"}>
-                  {store.isActive ? "Ativa" : "Pausada"}
-                </StatusBadge>
+                <StatusBadge status={visibility.badge}>{visibility.label}</StatusBadge>
               </div>
               <p className={cardSubtitle}>
-                {store.isActive
-                  ? "Visitantes veem a vitrine e podem fazer pedidos."
-                  : "A vitrine está fora do ar. Seus dados continuam salvos."}
+                {!store.isActive ? (
+                  "A vitrine está fora do ar. Seus dados continuam salvos."
+                ) : store.blockedByPlan ? (
+                  <>
+                    Seu plano permite menos lojas no ar do que você tem, então visitantes não veem esta vitrine nem
+                    fazem pedidos. Escolha esta loja para ficar no ar, ou{" "}
+                    <Link href="/menu/subscription" className="font-semibold text-primary-container hover:underline">
+                      veja os planos
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  "Visitantes veem a vitrine e podem fazer pedidos."
+                )}
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleToggleActive}
-              disabled={toggling}
-              className={store.isActive ? btnSecondary : btnPrimary}
-            >
-              {toggling ? (
-                <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
-              ) : store.isActive ? (
-                <Pause size={16} aria-hidden="true" />
-              ) : (
-                <Play size={16} aria-hidden="true" />
-              )}
-              {store.isActive ? "Pausar loja" : "Reativar loja"}
-            </button>
+            {!reactivateNeedsSwitch && (
+              <button
+                type="button"
+                onClick={handleToggleActive}
+                disabled={toggling}
+                className={store.isActive ? btnSecondary : btnPrimary}
+              >
+                {toggling ? (
+                  <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
+                ) : store.isActive ? (
+                  <Pause size={16} aria-hidden="true" />
+                ) : (
+                  <Play size={16} aria-hidden="true" />
+                )}
+                {store.isActive ? "Pausar loja" : "Reativar loja"}
+              </button>
+            )}
           </div>
+
+          {canSwitch && (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body-md text-amber-900">
+                {confirmingGoOnline
+                  ? "As outras lojas que passarem do limite do plano serão pausadas. Dá para trocar de novo quando quiser."
+                  : reactivateNeedsSwitch
+                    ? "Seu plano já está com o máximo de lojas no ar. Para reativar esta, troque com a loja que está no ar."
+                    : "Quer que esta seja a loja no ar?"}
+              </p>
+              <div className="flex shrink-0 gap-2">
+                {confirmingGoOnline ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingGoOnline(false)}
+                      disabled={toggling}
+                      className={btnSecondary}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleGoOnline} disabled={toggling} className={btnPrimary}>
+                      {toggling && <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />}
+                      Confirmar
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setConfirmingGoOnline(true)} className={btnPrimary}>
+                    <Power size={16} aria-hidden="true" />
+                    Deixar esta loja no ar
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Zona de perigo */}

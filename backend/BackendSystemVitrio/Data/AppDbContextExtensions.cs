@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BackendSystemVitrio.Data
 {
+    // Loja da vitrine junto com o plano que vale agora para o dono dela.
+    public record PublicStore(Store Store, Plan Plan);
+
     public static class AppDbContextExtensions
     {
         // Busca a loja só se ela pertencer ao usuário e não estiver excluída.
@@ -32,9 +35,52 @@ namespace BackendSystemVitrio.Data
             return plan ?? await context.Plan.FirstAsync(p => p.Id == Plan.FreeId);
         }
 
-        // Loja pública (vitrine): precisa estar ativa e não excluída.
-        public static Task<Store?> FindPublicStoreAsync(this AppDbContext context, string slug)
-            => context.Store.FirstOrDefaultAsync(s =>
+        // ===== Limites do plano =====
+        // Os limites valem para o que está ATIVO (loja no ar / produto visível).
+        // Quando o plano cai (fim do Profissional, assinatura suspensa...) nada é apagado nem
+        // alterado no banco: lojas e produtos ativos além do limite só deixam de aparecer na
+        // vitrine. Ficam os mais antigos; para escolher outros, o lojista pausa a loja ou
+        // oculta o produto que não quer. Se ele assinar de novo, tudo volta sozinho.
+        // Como é calculado na hora, vale também quando o plano "vence" sem nenhum evento
+        // (assinatura cancelada que passou de CurrentPeriodEnd).
+
+        // Lojas do usuário que podem ficar no ar com o plano atual.
+        public static IQueryable<Store> StoresWithinPlan(this AppDbContext context, int userId, Plan plan)
+            => context.Store
+                .Where(s => s.UserId == userId && s.IsActive && s.DeletionDate == null)
+                .OrderBy(s => s.CreationDate)
+                .ThenBy(s => s.Id)
+                .Take(plan.MaxStores);
+
+        // Produtos ativos da loja que podem aparecer na vitrine com o plano atual.
+        public static IQueryable<Product> ProductsWithinPlan(this AppDbContext context, int storeId, Plan plan)
+        {
+            var active = context.Product.Where(p => p.StoreId == storeId && p.IsActive && p.DeletionDate == null);
+            if (plan.MaxProductsPerStore is not int max)
+                return active;
+
+            var allowedIds = active
+                .OrderBy(p => p.CreationDate)
+                .ThenBy(p => p.Id)
+                .Take(max)
+                .Select(p => p.Id);
+
+            return active.Where(p => allowedIds.Contains(p.Id));
+        }
+
+        // Loja pública (vitrine): precisa estar ativa, não excluída e dentro do limite
+        // de lojas do plano do dono.
+        public static async Task<PublicStore?> FindPublicStoreAsync(this AppDbContext context, string slug)
+        {
+            var store = await context.Store.FirstOrDefaultAsync(s =>
                 s.Slug == slug && s.IsActive && s.DeletionDate == null);
+            if (store is null)
+                return null;
+
+            var plan = await context.GetEffectivePlanAsync(store.UserId);
+            var withinPlan = await context.StoresWithinPlan(store.UserId, plan).AnyAsync(s => s.Id == store.Id);
+
+            return withinPlan ? new PublicStore(store, plan) : null;
+        }
     }
 }
