@@ -27,6 +27,9 @@ namespace BackendSystemVitrio.DTO
         // ShippingAddress: endereço digitado no checkout (com ou sem login).
         public int? AddressId { get; set; }
         public AddressInputDto? ShippingAddress { get; set; }
+
+        // Online = pagar agora pelo Mercado Pago (só se a loja oferece; ver PublicStoreDto.OnlinePayment).
+        public OrderPaymentMethod PaymentMethod { get; set; } = OrderPaymentMethod.Arrange;
     }
 
     // ===== Painel do lojista =====
@@ -60,6 +63,9 @@ namespace BackendSystemVitrio.DTO
         public string? Notes { get; set; }
         public OrderStatus Status { get; set; }
         public decimal Total { get; set; }
+        public OrderPaymentMethod PaymentMethod { get; set; }
+        public OrderPaymentStatus PaymentStatus { get; set; }
+        public DateTime? PaidAt { get; set; }
         public DateTime CreationDate { get; set; }
         public DateTime? UpdatedDate { get; set; }
 
@@ -76,6 +82,12 @@ namespace BackendSystemVitrio.DTO
         public required string Code { get; set; }
         public OrderStatus Status { get; set; }
         public decimal Total { get; set; }
+        public OrderPaymentMethod PaymentMethod { get; set; }
+        public OrderPaymentStatus PaymentStatus { get; set; }
+        // Link para pagar e até quando dá para começar a pagar (30 min antes do prazo do pedido,
+        // pela validade mínima do Pix; ver OrderPaymentService.CheckoutClosesAt).
+        public string? PaymentCheckoutUrl { get; set; }
+        public DateTime? PaymentDeadline { get; set; }
         public DateTime CreationDate { get; set; }
         public required string StoreName { get; set; }
         public required string StoreSlug { get; set; }
@@ -90,6 +102,7 @@ namespace BackendSystemVitrio.DTO
         public required string Code { get; set; }
         public required string CustomerName { get; set; }
         public OrderStatus Status { get; set; }
+        public OrderPaymentStatus PaymentStatus { get; set; }
         public decimal Total { get; set; }
         public int ItemCount { get; set; }
         public DateTime CreationDate { get; set; }
@@ -111,5 +124,9 @@ namespace BackendSystemVitrio.DTO
         public required string Code { get; set; }
         public decimal Total { get; set; }
         public string? StorePhone { get; set; }
+        public OrderPaymentMethod PaymentMethod { get; set; }
+        // Pagamento online: link do checkout do Mercado Pago e até quando dá para começar a pagar.
+        public string? CheckoutUrl { get; set; }
+        public DateTime? PaymentDeadline { get; set; }
     }
 }

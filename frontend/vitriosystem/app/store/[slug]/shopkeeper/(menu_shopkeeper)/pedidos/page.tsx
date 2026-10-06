@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import {
   ChevronDown,
+  CreditCard,
   Inbox,
   LoaderCircle,
   Mail,
@@ -14,7 +15,14 @@ import {
 } from "lucide-react";
 import { unwrap } from "@/lib/api";
 import { getOrdersByStore, updateOrderStatus, type Order, type OrderStatus } from "@/lib/api_order";
-import { formatDateTime, formatPrice, ORDER_NEXT_STATUS, ORDER_STATUS_LABELS, whatsappLink } from "@/lib/format";
+import {
+  formatDateTime,
+  formatPrice,
+  ORDER_NEXT_STATUS,
+  ORDER_STATUS_LABELS,
+  PAYMENT_STATUS_LABELS,
+  whatsappLink,
+} from "@/lib/format";
 import { formatPhone } from "@/lib/validators";
 import { addressLine1, addressLine2 } from "@/lib/address";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
@@ -34,7 +42,7 @@ import {
   tableWrapper,
 } from "../../components/Ui";
 
-const FILTERS: (OrderStatus | "all")[] = ["all", "Pending", "Confirmed", "Shipped", "Delivered", "Canceled"];
+const FILTERS: (OrderStatus | "all")[] = ["all", "Pending", "Confirmed", "Shipped", "Delivered", "Canceled", "AwaitingPayment"];
 
 export default function OrdersPage() {
   const { store, refreshPendingOrders } = useShopkeeperStore();
@@ -102,7 +110,7 @@ export default function OrdersPage() {
     <>
       <PageHeader
         title="Pedidos"
-        subtitle="Pedidos feitos pela sua vitrine. O estoque é reservado quando o pedido chega."
+        subtitle="Pedidos feitos pela sua vitrine. O estoque é reservado quando o pedido chega. Pedidos pagos online só aparecem como pendentes depois de pagos."
         actions={
           <button
             type="button"
@@ -180,7 +188,16 @@ export default function OrdersPage() {
                         <span className="font-semibold text-on-surface">{formatPrice(order.total)}</span>
                       </td>
                       <td>
-                        <StatusBadge status={order.status}>{ORDER_STATUS_LABELS[order.status]}</StatusBadge>
+                        <span className="flex flex-col items-start gap-1">
+                          <StatusBadge status={order.status}>{ORDER_STATUS_LABELS[order.status]}</StatusBadge>
+                          {/* "Aguardando pagamento" já está no status; aqui pago, estornado... */}
+                          {order.paymentMethod === "Online" && order.paymentStatus !== "Pending" && (
+                            <span className="inline-flex items-center gap-1 text-body-sm text-outline">
+                              <CreditCard size={13} aria-hidden="true" />
+                              {PAYMENT_STATUS_LABELS[order.paymentStatus]}
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap">
                         <span className="text-outline">{formatDateTime(order.creationDate)}</span>
@@ -271,6 +288,18 @@ export default function OrdersPage() {
                               </div>
                             )}
 
+                            {/* Pagamento online */}
+                            {order.paymentMethod === "Online" && (
+                              <p className="flex items-center gap-2 text-body-md text-on-surface-variant">
+                                <CreditCard size={16} aria-hidden="true" className="shrink-0 text-outline" />
+                                {order.status === "AwaitingPayment"
+                                  ? "Esperando o cliente pagar no Mercado Pago. Se não for pago no prazo, o pedido é cancelado sozinho e o estoque volta."
+                                  : order.paymentStatus === "Approved"
+                                    ? `Pago pelo Mercado Pago${order.paidAt ? ` em ${formatDateTime(order.paidAt)}` : ""}. O valor está na sua conta.`
+                                    : PAYMENT_STATUS_LABELS[order.paymentStatus]}
+                              </p>
+                            )}
+
                             {rowError?.id === order.id && <ErrorBox>{rowError.message}</ErrorBox>}
 
                             {/* Ações */}
@@ -279,6 +308,8 @@ export default function OrdersPage() {
                                 message={
                                   <>
                                     Cancelar o pedido <strong>#{order.code}</strong>? Os itens voltam para o estoque.
+                                    {order.paymentStatus === "Approved" &&
+                                      " O valor pago é estornado ao cliente pelo Mercado Pago."}
                                   </>
                                 }
                                 confirmLabel="Cancelar pedido"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -37,6 +37,7 @@ import CartDrawer from "./Storefront/CartDrawer";
 import CustomerAuthModal from "./Storefront/CustomerAuthModal";
 import MyOrdersDrawer from "./Storefront/MyOrdersDrawer";
 import AddressesDrawer from "./Storefront/AddressesDrawer";
+import PaymentReturnModal from "./Storefront/PaymentReturnModal";
 import { ColorDot } from "./Storefront/Ui";
 
 /*
@@ -369,6 +370,11 @@ function Storefront({ slug }: { slug: string }) {
       )}
 
       {addressesOpen && user && <AddressesDrawer onClose={() => setAddressesOpen(false)} />}
+
+      {/* Volta do pagamento no Mercado Pago (?pedido=CODIGO) */}
+      <Suspense fallback={null}>
+        <PaymentReturnModal slug={store.slug} storeName={store.name} onSettled={reloadProducts} />
+      </Suspense>
 
       {/* Por último: abre por cima do carrinho quando o cliente clica em "Entre" no checkout */}
       {authOpen && <CustomerAuthModal storeName={store.name} onClose={() => setAuthOpen(false)} />}

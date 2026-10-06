@@ -1,17 +1,20 @@
 using System.Text.Json;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.SubscriptionService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace BackendSystemVitrio.Controllers
 {
-    // Notificações dos gateways de pagamento. Sem login (quem chama é o Mercado Pago),
-    // por isso toda notificação tem a assinatura (x-signature) validada.
+    // Notificações dos gateways de pagamento. Sem login (quem chama é o Mercado Pago).
+    // As de assinatura têm a assinatura (x-signature) validada; as de pedidos só servem de aviso
+    // (ver MercadoPagoOrders).
     [ApiController]
     [Route("api/[controller]")]
     [AllowAnonymous]
@@ -21,19 +24,67 @@ namespace BackendSystemVitrio.Controllers
 
         private readonly AppDbContext _context;
         private readonly ISubscriptionService _subscriptionService;
+        private readonly IOrderPaymentService _orderPayments;
         private readonly MercadoPagoOptions _options;
         private readonly ILogger<WebhooksController> _logger;
 
         public WebhooksController(
             AppDbContext context,
             ISubscriptionService subscriptionService,
+            IOrderPaymentService orderPayments,
             IOptions<MercadoPagoOptions> options,
             ILogger<WebhooksController> logger)
         {
             _context = context;
             _subscriptionService = subscriptionService;
+            _orderPayments = orderPayments;
             _options = options.Value;
             _logger = logger;
+        }
+
+        // POST /api/Webhooks/mercadopago/orders/{storeId}?data.id=...&type=payment
+        // Pagamentos dos pedidos de uma loja (notification_url da preferência criada com o token
+        // dela). O aviso não é confiável por si: o pagamento é lido na API do Mercado Pago com o
+        // token da loja e só vale se tiver a referência de um pedido dela e o valor certo. Assim,
+        // um aviso falso no máximo gera uma consulta (e a rota tem limite por IP).
+        [HttpPost("mercadopago/orders/{storeId:int}")]
+        [EnableRateLimiting("payment-notifications")]
+        public async Task<IActionResult> MercadoPagoOrders(int storeId)
+        {
+            JsonElement body = default;
+            try
+            {
+                using var doc = await JsonDocument.ParseAsync(Request.Body);
+                body = doc.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                // corpo vazio/inválido: segue só com o que veio na URL
+            }
+
+            // Formato webhook (data.id + type) ou o antigo IPN (id + topic).
+            string? paymentId = Request.Query["data.id"];
+            string? type = Request.Query["type"];
+            if (string.IsNullOrEmpty(paymentId) && TryGetProperty(body, "data", out var data))
+                paymentId = ReadScalar(data, "id");
+            type ??= ReadScalar(body, "type") ?? Request.Query["topic"];
+            if (string.IsNullOrEmpty(paymentId) && type == "payment")
+                paymentId = Request.Query["id"];
+
+            if (type != "payment" || string.IsNullOrEmpty(paymentId) || paymentId.Length > 30)
+                return Ok(); // outros avisos (ex.: merchant_order) não mudam nada aqui
+
+            try
+            {
+                await _orderPayments.HandleNotificationAsync(storeId, paymentId);
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                // 500 faz o Mercado Pago tentar de novo (a manutenção também confere sozinha).
+                _logger.LogError(ex, "Erro ao processar o aviso do pagamento {PaymentId} da loja {StoreId}", paymentId, storeId);
+                return StatusCode(StatusCodes.Status500InternalServerError);
+            }
         }
 
         // POST /api/Webhooks/mercadopago?data.id=...&type=...

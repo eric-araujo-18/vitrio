@@ -3,7 +3,12 @@
 import { request } from "./api";
 import type { ShippingAddress } from "./address";
 
-export type OrderStatus = "Pending" | "Confirmed" | "Shipped" | "Delivered" | "Canceled";
+/** AwaitingPayment: pagamento online ainda não aprovado (o pedido vira Pending quando for pago). */
+export type OrderStatus = "AwaitingPayment" | "Pending" | "Confirmed" | "Shipped" | "Delivered" | "Canceled";
+
+/** Arrange: combinar com a loja. Online: Mercado Pago, direto na conta da loja. */
+export type OrderPaymentMethod = "Arrange" | "Online";
+export type OrderPaymentStatus = "None" | "Pending" | "Approved" | "Refunded" | "Canceled";
 
 export interface OrderItem {
   id: number;
@@ -27,6 +32,9 @@ export interface Order {
   notes: string | null;
   status: OrderStatus;
   total: number;
+  paymentMethod: OrderPaymentMethod;
+  paymentStatus: OrderPaymentStatus;
+  paidAt: string | null;
   creationDate: string;
   updatedDate: string | null;
   /** Nulo em pedidos antigos, de antes do endereço existir */
@@ -39,6 +47,7 @@ export interface OrderSummary {
   code: string;
   customerName: string;
   status: OrderStatus;
+  paymentStatus: OrderPaymentStatus;
   total: number;
   itemCount: number;
   creationDate: string;
@@ -90,6 +99,11 @@ export interface CustomerOrder {
   code: string;
   status: OrderStatus;
   total: number;
+  paymentMethod: OrderPaymentMethod;
+  paymentStatus: OrderPaymentStatus;
+  /** Link para pagar, enquanto o pedido espera o pagamento e o prazo não acabou. */
+  paymentCheckoutUrl: string | null;
+  paymentDeadline: string | null;
   creationDate: string;
   storeName: string;
   storeSlug: string;

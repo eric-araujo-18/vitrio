@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,6 +17,7 @@ import {
 import { deleteStore, goOnlineStore, unwrap, updateStore } from "@/lib/api";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
+import OnlinePaymentCard from "../../components/OnlinePaymentCard";
 import {
   ErrorBox,
   PageHeader,
@@ -157,7 +158,7 @@ export default function ConfiguracoesPage() {
 
   return (
     <>
-      <PageHeader title="Configurações" subtitle="Dados da loja, visibilidade e exclusão." />
+      <PageHeader title="Configurações" subtitle="Dados da loja, pagamento online, visibilidade e exclusão." />
 
       <div className="flex max-w-[680px] flex-col gap-5">
         {/* Erro geral no topo, para não passar despercebido */}
@@ -252,6 +253,11 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         </form>
+
+        {/* Pagamento online (Mercado Pago) */}
+        <Suspense fallback={null}>
+          <OnlinePaymentCard storeId={store.id} />
+        </Suspense>
 
         {/* Visibilidade */}
         <section className={card}>

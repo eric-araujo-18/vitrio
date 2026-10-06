@@ -78,6 +78,7 @@ const BADGE_COLORS: Record<string, string> = {
   Shipped: "bg-violet-500/10 text-violet-700",
   Delivered: "bg-emerald-500/10 text-emerald-700",
   Canceled: "bg-slate-500/10 text-slate-600",
+  AwaitingPayment: "bg-sky-500/10 text-sky-700",
   Active: "bg-emerald-500/10 text-emerald-700",
   Inactive: "bg-slate-500/10 text-slate-600",
   Blocked: "bg-red-500/10 text-red-700",

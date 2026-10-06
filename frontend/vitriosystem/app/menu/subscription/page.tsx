@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Check, CircleAlert, CircleCheck, CreditCard, ExternalLink, LoaderCircle, Minus, TriangleAlert } from "lucide-react";
 import DashboardShell from "@/components/InitialPage/DashboardShell/DashboardShell";
 import { unwrap } from "@/lib/api";
@@ -358,6 +359,28 @@ function SubscriptionContent() {
             Você tem mais lojas do que o plano atual permite. Elas continuam funcionando, mas não dá para criar novas
             até voltar ao limite.
           </p>
+        )}
+
+        {/* O plano libera o pagamento online, mas cada loja precisa conectar a conta do Mercado Pago. */}
+        {plan.allowsOnlinePayment && mine.stores.length > 0 && (
+          <div className="mt-5 rounded-lg bg-primary-container/5 px-3 py-2.5 text-body-sm text-on-surface">
+            <p>
+              Seu plano inclui pagamento online (Pix e cartão). Para ativar, conecte a sua conta do Mercado Pago nas
+              configurações de cada loja:
+            </p>
+            <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+              {mine.stores.map((s) => (
+                <li key={s.storeId}>
+                  <Link
+                    href={`/store/${s.storeSlug}/shopkeeper/configuracoes`}
+                    className="font-semibold text-primary-container hover:underline"
+                  >
+                    {s.storeName}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 

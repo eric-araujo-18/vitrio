@@ -23,6 +23,7 @@ namespace BackendSystemVitrio.Data
         public DbSet<PasswordResetToken> PasswordResetToken { get; set; }
         public DbSet<Order> Order { get; set; }
         public DbSet<OrderItem> OrderItem { get; set; }
+        public DbSet<StorePaymentAccount> StorePaymentAccount { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -286,6 +287,30 @@ namespace BackendSystemVitrio.Data
             modelBuilder.Entity<Order>()
                 .Property(o => o.Total)
                 .HasPrecision(12, 2);
+
+            // ===== Pagamento online do pedido =====
+            modelBuilder.Entity<Order>(order =>
+            {
+                order.Property(o => o.PaymentPreferenceId).HasMaxLength(100);
+                order.Property(o => o.PaymentCheckoutUrl).HasMaxLength(500);
+                order.Property(o => o.GatewayPaymentId).HasMaxLength(50);
+                // A manutenção procura os pedidos esperando pagamento pelo prazo.
+                order.HasIndex(o => new { o.Status, o.PaymentDeadline });
+            });
+
+            // ===== StorePaymentAccount =====
+            // Uma conta do Mercado Pago por loja; excluir a loja apaga a conta conectada.
+            modelBuilder.Entity<StorePaymentAccount>(account =>
+            {
+                account.HasIndex(a => a.StoreId).IsUnique();
+                account.HasOne(a => a.Store)
+                    .WithOne()
+                    .HasForeignKey<StorePaymentAccount>(a => a.StoreId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                account.Property(a => a.MercadoPagoUserId).HasMaxLength(30);
+                account.Property(a => a.AccessTokenEncrypted).HasMaxLength(500);
+                account.Property(a => a.RefreshTokenEncrypted).HasMaxLength(500);
+            });
 
             modelBuilder.Entity<Order>()
                 .HasOne(o => o.Store)

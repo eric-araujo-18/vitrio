@@ -2,6 +2,7 @@
 
 import { request } from "./api";
 import type { AddressPayload } from "./api_customer";
+import type { OrderPaymentMethod, OrderPaymentStatus, OrderStatus } from "./api_order";
 import type { ProductCategory, ProductImage, ProductVariant } from "./api_product";
 
 export interface PublicStore {
@@ -10,6 +11,8 @@ export interface PublicStore {
   description: string | null;
   logoUrl: string | null;
   phone: string | null;
+  /** A loja aceita "pagar agora" pelo Mercado Pago no checkout. */
+  onlinePayment: boolean;
   primaryColor: string;
   secondaryColor: string;
   tertiaryColor: string;
@@ -51,11 +54,30 @@ export interface CreateOrderPayload {
   addressId?: number;
   /** Endereço digitado no checkout */
   shippingAddress?: AddressPayload;
+  /** "Online" só se a loja oferece (PublicStore.onlinePayment). Padrão: combinar com a loja. */
+  paymentMethod?: OrderPaymentMethod;
 }
 
 export interface OrderCreated {
   code: string;
   total: number;
+  storePhone: string | null;
+  paymentMethod: OrderPaymentMethod;
+  /** Pagamento online: link do checkout do Mercado Pago. */
+  checkoutUrl: string | null;
+  paymentDeadline: string | null;
+}
+
+/** Situação do pagamento de um pedido, para a vitrine. */
+export interface OrderPaymentInfo {
+  code: string;
+  status: OrderStatus;
+  paymentMethod: OrderPaymentMethod;
+  paymentStatus: OrderPaymentStatus;
+  total: number;
+  paymentDeadline: string | null;
+  /** Link para pagar, enquanto o pedido espera o pagamento e o prazo não acabou. */
+  checkoutUrl: string | null;
   storePhone: string | null;
 }
 
@@ -79,6 +101,11 @@ export function getPublicProducts(slug: string, filters?: { category?: string; s
 
 export function getPublicProduct(slug: string, productSlug: string) {
   return request<PublicProduct>(`${base(slug)}/products/${encodeURIComponent(productSlug)}`, "GET");
+}
+
+/** Confere o pagamento online do pedido (a API consulta o Mercado Pago se ainda estiver esperando). */
+export function getOrderPayment(slug: string, code: string) {
+  return request<OrderPaymentInfo>(`${base(slug)}/orders/${encodeURIComponent(code)}/payment`, "GET");
 }
 
 export function createPublicOrder(slug: string, payload: CreateOrderPayload) {

@@ -254,8 +254,10 @@ namespace BackendSystemVitrio.Services.StoreService
 
                 var products = _context.Product.Where(p => p.StoreId == storeId && p.DeletionDate == null);
                 var since = DateTime.UtcNow.AddDays(-30);
+                // Pedido esperando pagamento ainda não é venda (pode expirar).
                 var recentValidOrders = _context.Order.Where(o =>
-                    o.StoreId == storeId && o.CreationDate >= since && o.Status != OrderStatus.Canceled);
+                    o.StoreId == storeId && o.CreationDate >= since &&
+                    o.Status != OrderStatus.Canceled && o.Status != OrderStatus.AwaitingPayment);
 
                 var dashboard = new StoreDashboardDto
                 {
@@ -276,6 +278,7 @@ namespace BackendSystemVitrio.Services.StoreService
                             Code = o.Code,
                             CustomerName = o.CustomerName,
                             Status = o.Status,
+                            PaymentStatus = o.PaymentStatus,
                             Total = o.Total,
                             ItemCount = o.Items.Sum(i => i.Quantity),
                             CreationDate = o.CreationDate

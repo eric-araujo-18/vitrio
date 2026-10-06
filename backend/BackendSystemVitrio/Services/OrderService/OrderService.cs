@@ -5,8 +5,11 @@ using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Enum;
 using BackendSystemVitrio.Helpers;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.OrderPaymentService;
+using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Wrappers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BackendSystemVitrio.Services.OrderService
 {
@@ -16,11 +19,19 @@ namespace BackendSystemVitrio.Services.OrderService
         private const int MaxQuantityPerItem = 999;
 
         private readonly AppDbContext _context;
+        private readonly IOrderPaymentService _payments;
+        private readonly MercadoPagoOptions _mercadoPagoOptions;
         private readonly ILogger<OrderService> _logger;
 
-        public OrderService(AppDbContext context, ILogger<OrderService> logger)
+        public OrderService(
+            AppDbContext context,
+            IOrderPaymentService payments,
+            IOptions<MercadoPagoOptions> mercadoPagoOptions,
+            ILogger<OrderService> logger)
         {
             _context = context;
+            _payments = payments;
+            _mercadoPagoOptions = mercadoPagoOptions.Value;
             _logger = logger;
         }
 
@@ -94,6 +105,7 @@ namespace BackendSystemVitrio.Services.OrderService
                             Code = o.Code,
                             CustomerName = o.CustomerName,
                             Status = o.Status,
+                            PaymentStatus = o.PaymentStatus,
                             Total = o.Total,
                             ItemCount = o.Items.Sum(i => i.Quantity),
                             CreationDate = o.CreationDate,
@@ -125,6 +137,22 @@ namespace BackendSystemVitrio.Services.OrderService
                 if (order.Status == status)
                     return await ReloadAsDtoAsync(order.Id, "Nada para alterar.");
 
+                // "Aguardando pagamento" é controlado pelo pagamento online, não pelo lojista.
+                if (status == OrderStatus.AwaitingPayment)
+                    return Response<OrderResponseDto>.Fail("Status inválido.");
+
+                if (order.Status == OrderStatus.AwaitingPayment)
+                {
+                    if (status != OrderStatus.Canceled)
+                        return Response<OrderResponseDto>.Fail(
+                            "Este pedido está esperando o pagamento do cliente. Ele muda sozinho quando o pagamento for aprovado.");
+
+                    // Se o cliente pagar mesmo assim, o pagamento é estornado automaticamente.
+                    return await _payments.CancelUnpaidAsync(order.Id)
+                        ? await ReloadAsDtoAsync(order.Id, "Pedido cancelado.")
+                        : Response<OrderResponseDto>.Fail("O pagamento deste pedido acabou de ser aprovado. Atualize a lista de pedidos.");
+                }
+
                 // Pedido cancelado é final: reabrir exigiria reservar o estoque de novo,
                 // e ele pode já ter sido vendido pra outra pessoa.
                 if (order.Status == OrderStatus.Canceled)
@@ -133,38 +161,30 @@ namespace BackendSystemVitrio.Services.OrderService
                 if (order.Status == OrderStatus.Delivered && status != OrderStatus.Canceled)
                     return Response<OrderResponseDto>.Fail("Pedido já entregue.");
 
+                // Cancelar um pedido pago online devolve o dinheiro ao cliente. Sem o estorno,
+                // o pedido não é cancelado (o lojista tenta de novo ou estorna pelo Mercado Pago).
+                if (status == OrderStatus.Canceled && order.PaymentStatus == OrderPaymentStatus.Approved)
+                {
+                    if (!await _payments.RefundAsync(order))
+                        return Response<OrderResponseDto>.Fail(
+                            "Não foi possível estornar o pagamento no Mercado Pago. Tente de novo ou faça o estorno pelo painel do Mercado Pago e cancele depois.");
+                    order.PaymentStatus = OrderPaymentStatus.Refunded;
+                }
+
                 await using var transaction = await _context.Database.BeginTransactionAsync();
 
+                // Devolve ao estoque o que foi reservado na criação do pedido.
                 if (status == OrderStatus.Canceled)
-                {
-                    // Devolve ao estoque o que foi reservado na criação do pedido.
-                    foreach (var item in order.Items.Where(i => i.ProductId.HasValue))
-                    {
-                        // Se o tamanho ainda existe, devolve pra ele e soma no total do produto.
-                        // Se o lojista apagou o tamanho, não há onde devolver: o total do
-                        // produto também não muda, pra continuar igual à soma dos tamanhos.
-                        if (item.VariantId.HasValue)
-                        {
-                            var restored = await _context.ProductVariant
-                                .Where(v => v.Id == item.VariantId.Value)
-                                .ExecuteUpdateAsync(set => set.SetProperty(v => v.StockQuantity, v => v.StockQuantity + item.Quantity));
-
-                            if (restored == 0)
-                                continue;
-                        }
-
-                        await _context.Product
-                            .Where(p => p.Id == item.ProductId!.Value)
-                            .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity + item.Quantity));
-                    }
-                }
+                    await _context.RestoreStockAsync(order.Items);
 
                 order.Status = status;
                 order.UpdatedDate = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return await ReloadAsDtoAsync(order.Id, "Status do pedido atualizado.");
+                return await ReloadAsDtoAsync(order.Id, order.PaymentStatus == OrderPaymentStatus.Refunded && status == OrderStatus.Canceled
+                    ? "Pedido cancelado e pagamento estornado ao cliente."
+                    : "Status do pedido atualizado.");
             }
             catch (Exception ex)
             {
@@ -179,6 +199,7 @@ namespace BackendSystemVitrio.Services.OrderService
         {
             try
             {
+                var payableUntilAfter = DateTime.UtcNow + OrderPaymentService.OrderPaymentService.PixMinimumValidity;
                 var query = _context.Order.Where(o => o.CustomerUserId == userId);
 
                 if (!string.IsNullOrWhiteSpace(storeSlug))
@@ -193,6 +214,13 @@ namespace BackendSystemVitrio.Services.OrderService
                         Code = o.Code,
                         Status = o.Status,
                         Total = o.Total,
+                        PaymentMethod = o.PaymentMethod,
+                        PaymentStatus = o.PaymentStatus,
+                        // O link vale enquanto ainda dá para começar a pagar (até 30 min antes do prazo).
+                        PaymentCheckoutUrl = o.Status == OrderStatus.AwaitingPayment && o.PaymentDeadline > payableUntilAfter
+                            ? o.PaymentCheckoutUrl
+                            : null,
+                        PaymentDeadline = o.PaymentDeadline == null ? null : o.PaymentDeadline.Value.AddMinutes(-OrderPaymentService.OrderPaymentService.PixMinimumValidity.TotalMinutes),
                         CreationDate = o.CreationDate,
                         StoreName = o.Store!.Name,
                         StoreSlug = o.Store.Slug,
@@ -244,6 +272,10 @@ namespace BackendSystemVitrio.Services.OrderService
                     return Response<OrderCreatedDto>.Fail("Loja não encontrada ou indisponível.");
 
                 var store = found.Store;
+
+                var online = dto.PaymentMethod == OrderPaymentMethod.Online;
+                if (online && !await _payments.IsAvailableAsync(store.Id, found.Plan))
+                    return Response<OrderCreatedDto>.Fail("Esta loja não está recebendo pagamento online agora. Escolha combinar com a loja.");
 
                 if (string.IsNullOrWhiteSpace(dto.CustomerName) || dto.CustomerName.Trim().Length < 2)
                     return Response<OrderCreatedDto>.Fail("Informe seu nome.");
@@ -321,6 +353,16 @@ namespace BackendSystemVitrio.Services.OrderService
                     ShippingComplement = shipping.Complement,
                 };
 
+                if (online)
+                {
+                    // O estoque fica reservado até o prazo; sem pagamento, a manutenção cancela o
+                    // pedido e devolve. O lojista só é avisado quando o pagamento for aprovado.
+                    order.Status = OrderStatus.AwaitingPayment;
+                    order.PaymentMethod = OrderPaymentMethod.Online;
+                    order.PaymentStatus = OrderPaymentStatus.Pending;
+                    order.PaymentDeadline = DateTime.UtcNow.AddMinutes(_mercadoPagoOptions.EffectiveOrderPaymentMinutes);
+                }
+
                 foreach (var item in requested)
                 {
                     if (!products.TryGetValue(item.ProductId, out var product))
@@ -385,12 +427,34 @@ namespace BackendSystemVitrio.Services.OrderService
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                string? checkoutUrl = null;
+                if (online)
+                {
+                    try
+                    {
+                        checkoutUrl = await _payments.StartCheckoutAsync(order);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Sem o link não dá para pagar: desfaz o pedido e devolve o estoque.
+                        _logger.LogError(ex, "Erro ao criar o pagamento do pedido {OrderId}", order.Id);
+                        await _payments.CancelUnpaidAsync(order.Id);
+                        return Response<OrderCreatedDto>.Fail(
+                            "Não foi possível abrir o pagamento online agora. Tente de novo ou escolha combinar com a loja.");
+                    }
+                }
+
                 return Response<OrderCreatedDto>.Ok(new OrderCreatedDto
                 {
                     Code = order.Code,
                     Total = order.Total,
                     StorePhone = store.Phone,
-                }, "Pedido enviado com sucesso!");
+                    PaymentMethod = order.PaymentMethod,
+                    CheckoutUrl = checkoutUrl,
+                    PaymentDeadline = order.PaymentDeadline is null
+                        ? null
+                        : OrderPaymentService.OrderPaymentService.CheckoutClosesAt(order.PaymentDeadline.Value),
+                }, online ? "Pedido criado. Falta só o pagamento." : "Pedido enviado com sucesso!");
             }
             catch (Exception ex)
             {
@@ -437,6 +501,9 @@ namespace BackendSystemVitrio.Services.OrderService
             Notes = o.Notes,
             Status = o.Status,
             Total = o.Total,
+            PaymentMethod = o.PaymentMethod,
+            PaymentStatus = o.PaymentStatus,
+            PaidAt = o.PaidAt,
             CreationDate = o.CreationDate,
             UpdatedDate = o.UpdatedDate,
             ShippingAddress = o.ShippingCep == null

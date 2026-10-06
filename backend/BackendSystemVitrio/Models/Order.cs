@@ -39,6 +39,20 @@ namespace BackendSystemVitrio.Models
 
         public decimal Total { get; set; }
 
+        // ===== Pagamento online (Mercado Pago, na conta da loja) =====
+        public OrderPaymentMethod PaymentMethod { get; set; } = OrderPaymentMethod.Arrange;
+        public OrderPaymentStatus PaymentStatus { get; set; } = OrderPaymentStatus.None;
+        // Preferência do Checkout Pro e o link para pagar (serve para retomar o pagamento).
+        public string? PaymentPreferenceId { get; set; }
+        public string? PaymentCheckoutUrl { get; set; }
+        // Até quando o estoque fica reservado esperando o pagamento.
+        public DateTime? PaymentDeadline { get; set; }
+        // Pagamento aprovado no Mercado Pago (usado no estorno).
+        public string? GatewayPaymentId { get; set; }
+        public DateTime? PaidAt { get; set; }
+        // Última vez que o pagamento foi conferido na API do Mercado Pago.
+        public DateTime? PaymentLastSyncedAt { get; set; }
+
         public DateTime CreationDate { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedDate { get; set; }
 

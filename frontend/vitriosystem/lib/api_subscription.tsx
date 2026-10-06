@@ -19,6 +19,7 @@ export interface Plan {
 export interface StoreUsage {
   storeId: number;
   storeName: string;
+  storeSlug: string;
   productCount: number;
 }
 

@@ -9,6 +9,8 @@ namespace BackendSystemVitrio.DTO
         public string? Description { get; set; }
         public string? LogoUrl { get; set; }
         public string? Phone { get; set; }
+        // A loja aceita "pagar agora" pelo Mercado Pago no checkout.
+        public bool OnlinePayment { get; set; }
         public required string PrimaryColor { get; set; }
         public required string SecondaryColor { get; set; }
         public required string TertiaryColor { get; set; }

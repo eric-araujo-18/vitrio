@@ -19,6 +19,7 @@ namespace BackendSystemVitrio.DTO
     {
         public int StoreId { get; set; }
         public required string StoreName { get; set; }
+        public required string StoreSlug { get; set; }
         public int ProductCount { get; set; }
     }
 

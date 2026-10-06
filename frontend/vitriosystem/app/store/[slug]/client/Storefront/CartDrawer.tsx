@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CircleAlert,
   CircleCheck,
+  CreditCard,
   ImageOff,
   LoaderCircle,
   MessageCircle,
@@ -14,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { createPublicOrder, type OrderCreated, type PublicStore } from "@/lib/api_public";
+import type { OrderPaymentMethod } from "@/lib/api_order";
 import { unwrap } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { useAuth } from "@/lib/auth_context";
@@ -76,7 +78,12 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[] | null>(null);
   const [selectedAddress, setSelectedAddress] = useState<number | "new">("new");
   const [saveNewAddress, setSaveNewAddress] = useState(true);
+  // Forma de pagamento: "pagar agora" (Mercado Pago) só aparece se a loja oferece.
+  const [paymentMethod, setPaymentMethod] = useState<OrderPaymentMethod>(store.onlinePayment ? "Online" : "Arrange");
+  const payOnline = store.onlinePayment && paymentMethod === "Online";
   const [sending, setSending] = useState(false);
+  // Pedido criado: indo para o checkout do Mercado Pago (trava o carrinho até sair da página).
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<OrderCreated | null>(null);
 
@@ -164,6 +171,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
           notes: notes.trim() || undefined,
           addressId,
           shippingAddress,
+          paymentMethod: payOnline ? "Online" : "Arrange",
           items: items.map((i) => ({
             productId: i.productId,
             variantId: i.variantId ?? undefined,
@@ -171,10 +179,16 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
           })),
         })
       );
-      setCreated(result);
       clear();
-      setStep("done");
       onOrderPlaced?.();
+      if (result.checkoutUrl) {
+        // Paga no Mercado Pago; ao terminar, volta para a vitrine com ?pedido=CODIGO.
+        setRedirecting(true);
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+      setCreated(result);
+      setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar o pedido.");
     } finally {
@@ -403,7 +417,8 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                     {user && savedAddresses && savedAddresses.length > 0 && (
                       <div role="radiogroup" aria-label="Endereços salvos" className="flex flex-col gap-2">
                         {savedAddresses.map((a) => (
-                          <AddressOption
+                          <ChoiceOption
+                            name="checkout-address"
                             key={a.id}
                             checked={selectedAddress === a.id}
                             onSelect={() => setSelectedAddress(a.id)}
@@ -413,9 +428,10 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                           >
                             <span className="block text-body-sm text-slate-600">{addressLine1(a)}</span>
                             <span className="block text-body-sm text-slate-500">{addressLine2(a)}</span>
-                          </AddressOption>
+                          </ChoiceOption>
                         ))}
-                        <AddressOption
+                        <ChoiceOption
+                          name="checkout-address"
                           checked={selectedAddress === "new"}
                           onSelect={() => setSelectedAddress("new")}
                           disabled={sending}
@@ -442,6 +458,34 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                       </>
                     )}
                   </fieldset>
+
+                  {store.onlinePayment && (
+                    <fieldset className="flex flex-col gap-2 border-t border-slate-100 pt-4">
+                      <legend className="mb-3 text-title-md font-bold text-slate-900">Pagamento</legend>
+                      <ChoiceOption
+                        name="checkout-payment"
+                        checked={paymentMethod === "Online"}
+                        onSelect={() => setPaymentMethod("Online")}
+                        disabled={sending}
+                        title="Pagar agora"
+                      >
+                        <span className="block text-body-sm text-slate-600">
+                          Pix ou cartão, pelo Mercado Pago. O pedido vai para a loja assim que o pagamento for aprovado.
+                        </span>
+                      </ChoiceOption>
+                      <ChoiceOption
+                        name="checkout-payment"
+                        checked={paymentMethod === "Arrange"}
+                        onSelect={() => setPaymentMethod("Arrange")}
+                        disabled={sending}
+                        title="Combinar com a loja"
+                      >
+                        <span className="block text-body-sm text-slate-600">
+                          A loja entra em contato para combinar o pagamento e a entrega.
+                        </span>
+                      </ChoiceOption>
+                    </fieldset>
+                  )}
 
                   <Field id="c-notes" label="Observações">
                     <textarea
@@ -482,11 +526,16 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
                 </button>
               ) : (
                 <>
-                  <button type="submit" form="checkout-form" disabled={sending} className={storePrimaryButton}>
-                    {sending ? (
+                  <button type="submit" form="checkout-form" disabled={sending || redirecting} className={storePrimaryButton}>
+                    {sending || redirecting ? (
                       <>
                         <LoaderCircle size={18} aria-hidden="true" className="animate-spin" />
-                        Enviando...
+                        {redirecting ? "Abrindo o pagamento..." : "Enviando..."}
+                      </>
+                    ) : payOnline ? (
+                      <>
+                        <CreditCard size={18} aria-hidden="true" />
+                        Ir para o pagamento
                       </>
                     ) : (
                       <>
@@ -507,7 +556,9 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
               )}
 
               <p className="text-center text-body-sm text-slate-400">
-                O pagamento é combinado diretamente com a loja.
+                {payOnline
+                  ? "Você paga no Mercado Pago. Os itens ficam reservados enquanto você paga."
+                  : "O pagamento é combinado diretamente com a loja."}
               </p>
             </div>
           </>
@@ -517,8 +568,9 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
   );
 }
 
-// Opção de endereço no checkout (um "radio" com cara de cartão)
-function AddressOption({
+// Opção do checkout (endereço, pagamento): um "radio" com cara de cartão
+function ChoiceOption({
+  name,
   checked,
   onSelect,
   disabled,
@@ -526,6 +578,7 @@ function AddressOption({
   badge,
   children,
 }: {
+  name: string;
   checked: boolean;
   onSelect: () => void;
   disabled?: boolean;
@@ -541,7 +594,7 @@ function AddressOption({
     >
       <input
         type="radio"
-        name="checkout-address"
+        name={name}
         checked={checked}
         onChange={onSelect}
         disabled={disabled}

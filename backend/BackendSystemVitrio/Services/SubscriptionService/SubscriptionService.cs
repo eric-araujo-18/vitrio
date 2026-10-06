@@ -159,6 +159,7 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                     {
                         StoreId = s.Id,
                         StoreName = s.Name,
+                        StoreSlug = s.Slug,
                         ProductCount = _context.Product.Count(p => p.StoreId == s.Id && p.DeletionDate == null),
                     })
                     .ToListAsync();

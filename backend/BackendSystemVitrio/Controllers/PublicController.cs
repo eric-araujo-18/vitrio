@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.PublicService;
 using Microsoft.AspNetCore.Authorization;
@@ -16,11 +17,13 @@ namespace BackendSystemVitrio.Controllers
     {
         private readonly IPublicService _publicService;
         private readonly IOrderService _orderService;
+        private readonly IOrderPaymentService _orderPayments;
 
-        public PublicController(IPublicService publicService, IOrderService orderService)
+        public PublicController(IPublicService publicService, IOrderService orderService, IOrderPaymentService orderPayments)
         {
             _publicService = publicService;
             _orderService = orderService;
+            _orderPayments = orderPayments;
         }
 
         // GET /api/Public/stores/{slug}
@@ -61,5 +64,20 @@ namespace BackendSystemVitrio.Controllers
             int? customerUserId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
             return Ok(await _orderService.CreatePublicOrderAsync(slug, dto, customerUserId));
         }
+
+        // GET /api/Public/stores/{slug}/orders/{code}/payment
+        // Situação do pagamento online. A vitrine consulta enquanto o cliente espera a confirmação;
+        // se ainda estiver esperando, confere no Mercado Pago (no máximo a cada 5s por pedido).
+        [HttpGet("orders/{code}/payment")]
+        [EnableRateLimiting("public-payment-status")]
+        public async Task<IActionResult> GetOrderPayment(string slug, string code)
+            => Ok(await _orderPayments.GetPublicStatusAsync(slug, code));
+
+        // GET /api/Public/stores/{slug}/orders/{code}/payment-return
+        // Volta do checkout do Mercado Pago (back_url): manda o cliente para a vitrine, que mostra
+        // a situação do pagamento. O destino é montado com dados do banco, nunca da URL.
+        [HttpGet("orders/{code}/payment-return")]
+        public async Task<IActionResult> PaymentReturn(string slug, string code)
+            => Redirect(await _orderPayments.GetReturnUrlAsync(slug, code));
     }
 }

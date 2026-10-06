@@ -7,7 +7,9 @@ using BackendSystemVitrio.Middlewares;
 using BackendSystemVitrio.Services.AuthService;
 using BackendSystemVitrio.Services.CategoryService;
 using BackendSystemVitrio.Services.Cleanup;
+using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Services.OrderService;
+using BackendSystemVitrio.Services.StorePaymentService;
 using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
 using BackendSystemVitrio.Services.CustomerService;
@@ -77,6 +79,18 @@ builder.Services.AddHttpClient<IMercadoPagoClient, MercadoPagoClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddHostedService<SubscriptionMaintenanceService>();
+
+// Pagamento online dos pedidos: cada loja conecta a própria conta do Mercado Pago (OAuth)
+// e a cobrança é criada em nome dela (o dinheiro cai na conta da loja).
+builder.Services.AddSingleton<PaymentTokenProtector>();
+builder.Services.AddHttpClient<IMercadoPagoMarketplaceClient, MercadoPagoMarketplaceClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.mercadopago.com/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddScoped<IStorePaymentService, StorePaymentService>();
+builder.Services.AddScoped<IOrderPaymentService, OrderPaymentService>();
+builder.Services.AddHostedService<OrderPaymentMaintenanceService>();
 
 // ===== E-mail (Resend) =====
 // Sem Email:ResendApiKey, no desenvolvimento o e-mail vai para o log em vez de ser enviado.
@@ -195,6 +209,29 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // Vitrine conferindo o pagamento de um pedido (a cada 4-5s enquanto o cliente espera).
+    options.AddPolicy("public-payment-status", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // Avisos de pagamento dos pedidos: cada um vira uma consulta ao Mercado Pago com o token
+    // da loja, então um IP mandando avisos em série é barrado.
+    options.AddPolicy("payment-notifications", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));

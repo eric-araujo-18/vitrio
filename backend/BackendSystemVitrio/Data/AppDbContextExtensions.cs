@@ -9,6 +9,31 @@ namespace BackendSystemVitrio.Data
 
     public static class AppDbContextExtensions
     {
+        // Devolve ao estoque o que um pedido reservou (pedido cancelado ou pagamento expirado).
+        // Chame dentro da mesma transação que muda o status do pedido.
+        public static async Task RestoreStockAsync(this AppDbContext context, IEnumerable<OrderItem> items)
+        {
+            foreach (var item in items.Where(i => i.ProductId.HasValue))
+            {
+                // Se o tamanho ainda existe, devolve pra ele e soma no total do produto.
+                // Se o lojista apagou o tamanho, não há onde devolver: o total do
+                // produto também não muda, pra continuar igual à soma dos tamanhos.
+                if (item.VariantId.HasValue)
+                {
+                    var restored = await context.ProductVariant
+                        .Where(v => v.Id == item.VariantId.Value)
+                        .ExecuteUpdateAsync(set => set.SetProperty(v => v.StockQuantity, v => v.StockQuantity + item.Quantity));
+
+                    if (restored == 0)
+                        continue;
+                }
+
+                await context.Product
+                    .Where(p => p.Id == item.ProductId!.Value)
+                    .ExecuteUpdateAsync(set => set.SetProperty(p => p.StockQuantity, p => p.StockQuantity + item.Quantity));
+            }
+        }
+
         // Busca a loja só se ela pertencer ao usuário e não estiver excluída.
         // Retornar null tanto pra "não existe" quanto pra "não é sua" evita
         // revelar quais IDs de loja existem.

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ImageOff, LoaderCircle, MapPin, MessageCircle, Package, X } from "lucide-react";
+import { CreditCard, ImageOff, LoaderCircle, MapPin, MessageCircle, Package, X } from "lucide-react";
 import { addressLine1, addressLine2 } from "@/lib/address";
 import { getMyOrders, type CustomerOrder, type OrderStatus } from "@/lib/api_order";
-import { formatDateTime, formatPrice, ORDER_STATUS_LABELS, whatsappLink } from "@/lib/format";
+import { formatDateTime, formatPrice, formatTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, whatsappLink } from "@/lib/format";
 import { iconButton, storeOverlay, storeSecondaryButton, useLockBodyScroll } from "./Ui";
 
 interface MyOrdersDrawerProps {
@@ -14,6 +14,7 @@ interface MyOrdersDrawerProps {
 }
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
+  AwaitingPayment: "bg-sky-500/10 text-sky-700",
   Pending: "bg-amber-500/10 text-amber-700",
   Confirmed: "bg-blue-500/10 text-blue-700",
   Shipped: "bg-violet-500/10 text-violet-700",
@@ -98,7 +99,26 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
                       {ORDER_STATUS_LABELS[order.status]}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-body-sm text-slate-500">{formatDateTime(order.creationDate)}</p>
+                  <p className="mt-0.5 text-body-sm text-slate-500">
+                    {formatDateTime(order.creationDate)}
+                    {/* "Aguardando pagamento" já aparece no status do pedido; aqui só os outros casos. */}
+                    {order.paymentMethod === "Online" && order.paymentStatus !== "Pending" && (
+                      <> · {PAYMENT_STATUS_LABELS[order.paymentStatus]}</>
+                    )}
+                  </p>
+
+                  {order.paymentCheckoutUrl && (
+                    <a
+                      href={order.paymentCheckoutUrl}
+                      className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--store-primary)] px-3.5 text-label-md font-semibold text-white hover:brightness-110"
+                    >
+                      <CreditCard size={16} aria-hidden="true" />
+                      Pagar agora
+                      {order.paymentDeadline && (
+                        <span className="font-normal opacity-80">(até {formatTime(order.paymentDeadline)})</span>
+                      )}
+                    </a>
+                  )}
 
                   <ul className="mt-3 flex flex-col gap-2.5">
                     {order.items.map((item) => (

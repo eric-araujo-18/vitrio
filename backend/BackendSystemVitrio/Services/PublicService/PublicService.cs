@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Wrappers;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,10 +13,12 @@ namespace BackendSystemVitrio.Services.PublicService
         private const string NotFound = "Loja não encontrada ou indisponível.";
 
         private readonly AppDbContext _context;
+        private readonly IOrderPaymentService _payments;
 
-        public PublicService(AppDbContext context)
+        public PublicService(AppDbContext context, IOrderPaymentService payments)
         {
             _context = context;
+            _payments = payments;
         }
 
         public async Task<Response<PublicStoreDto>> GetStoreAsync(string slug)
@@ -33,6 +36,7 @@ namespace BackendSystemVitrio.Services.PublicService
                 Description = store.Description,
                 LogoUrl = store.LogoUrl,
                 Phone = store.Phone,
+                OnlinePayment = await _payments.IsAvailableAsync(store.Id, found.Plan),
                 PrimaryColor = store.PrimaryColor,
                 SecondaryColor = store.SecondaryColor,
                 TertiaryColor = store.TertiaryColor,
