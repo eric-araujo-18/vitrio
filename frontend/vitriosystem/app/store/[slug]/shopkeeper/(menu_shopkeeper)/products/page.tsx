@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Package, Plus, Search, SearchX } from "lucide-react";
 import { unwrap } from "@/lib/api";
-import { deleteProduct, getProductsByStore, type Product } from "@/lib/api_product";
+import { deleteProduct, getProductById, getProductsByStore, type Product } from "@/lib/api_product";
 import CreateProductModal from "../../components/CreateProductModal/CreateProductModal";
 import ProductCard from "../../components/ProductCard/ProductCard";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
@@ -83,6 +83,23 @@ export default function ProductsShopkeeper() {
       return p.name.toLowerCase().includes(term) || (p.sku ?? "").toLowerCase().includes(term);
     });
   }, [products, search, activeFilter]);
+
+  // Abre a edição com o produto atual (o estoque da lista pode ser de minutos atrás, com vendas
+  // no meio). Se não conseguir buscar, abre com o da lista: o backend aplica só a diferença.
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  async function openEdit(product: Product) {
+    if (openingId !== null) return;
+    setOpeningId(product.id);
+    try {
+      const fresh = await unwrap(getProductById(product.id));
+      setProducts((prev) => prev.map((p) => (p.id === fresh.id ? fresh : p)));
+      setEditing(fresh);
+    } catch {
+      setEditing(product);
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   function handleSaved(product: Product) {
     setProducts((prev) => {
@@ -218,7 +235,7 @@ export default function ProductsShopkeeper() {
             <ProductCard
               key={product.id}
               product={product}
-              onEdit={() => setEditing(product)}
+              onEdit={() => void openEdit(product)}
               onDelete={() => setToDelete(product)}
             />
           ))}

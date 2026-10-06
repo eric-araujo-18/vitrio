@@ -13,6 +13,7 @@ namespace BackendSystemVitrio.DTO
         public required string SecondaryColor { get; set; }
         public required string TertiaryColor { get; set; }
         public bool IsActive { get; set; }
+        public bool NotifyNewOrdersByEmail { get; set; }
         public DateTime CreationDate { get; set; }
 
         // Ativa, mas fora do ar porque passou do limite de lojas do plano atual.

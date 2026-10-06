@@ -24,6 +24,7 @@ import {
 import { getCategoriesByStore, type Category } from "@/lib/api_category";
 import { uploadImage } from "@/lib/upload";
 import { SIZE_GRIDS, detectSizeGrid, type SizeGrid } from "@/lib/sizes";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { ErrorBox, btnPrimary, btnSecondary, hint, input, label } from "../Ui";
 
 const MAX_IMAGES = 8;
@@ -107,6 +108,9 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
   const [colorHex, setColorHex] = useState(product?.colorHex ?? "");
   const [linkedProductId, setLinkedProductId] = useState<string>("");
   const [storeProducts, setStoreProducts] = useState<Product[]>([]);
+  const [linksState, setLinksState] = useState<"loading" | "ready" | "error">("loading");
+  // Peça com outras cores: o "Mesma peça que" só é preenchido quando a lista chega.
+  const waitingColorGroup = !!product?.colorGroupId && linksState !== "ready";
   const [images, setImages] = useState<PendingImage[]>(
     (product?.images ?? []).map((img) => ({ key: newKey(), url: img.url, uploading: false }))
   );
@@ -147,8 +151,13 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
           const sibling = groupId ? list.find((p) => p.id !== product.id && p.colorGroupId === groupId) : undefined;
           if (sibling) setLinkedProductId(String(sibling.id));
         }
+        setLinksState("ready");
       })
-      .catch(() => active && setStoreProducts([]));
+      .catch(() => {
+        if (!active) return;
+        setStoreProducts([]);
+        setLinksState("error");
+      });
     return () => {
       active = false;
     };
@@ -188,6 +197,9 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
     const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label, "pt-BR");
     return { groups: groups.sort(byLabel), singles: singles.sort(byLabel) };
   }, [storeProducts, product?.id]);
+
+  // Fecha clicando fora, mas não quando o mouse só termina fora (ex.: selecionando o texto de um campo).
+  const backdrop = useBackdropDismiss(() => !loading && onClose());
 
   // Fecha com Esc
   useEffect(() => {
@@ -298,8 +310,24 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
       return;
     }
 
-    // A ordem da grade vira a ordem de exibição na vitrine.
-    const variants = offeredSizes.map((size) => ({ size, stockQuantity: Number(sizeStock[size]) }));
+    // A ordem da grade vira a ordem de exibição na vitrine. Na edição, cada tamanho leva o
+    // estoque de quando o formulário abriu: o backend aplica só a diferença digitada.
+    const variants = offeredSizes.map((size) => ({
+      size,
+      stockQuantity: Number(sizeStock[size]),
+      originalStockQuantity: product?.variants.find((v) => v.size === size)?.stockQuantity,
+    }));
+
+    // Salvar antes de a lista de produtos chegar tiraria esta peça do grupo de cores
+    // (o "Mesma peça que" ainda estaria vazio).
+    if (waitingColorGroup) {
+      setError(
+        linksState === "error"
+          ? "Não foi possível carregar as outras cores desta peça. Feche e abra o produto de novo."
+          : "Aguarde carregar as outras cores desta peça."
+      );
+      return;
+    }
 
     if (linkedProductId && !colorName.trim()) {
       setError("Informe o nome da cor deste produto para ligá-lo às outras cores.");
@@ -321,6 +349,7 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
       promotionalPrice: promoValue,
       // Com tamanhos, o backend recalcula o total como a soma deles.
       stockQuantity: sizeGrid === "none" ? stockValue : sizesTotal,
+      originalStockQuantity: product?.stockQuantity,
       isActive,
       isFeatured,
       images: images.map((img, index) => ({ url: img.url, order: index })),
@@ -347,13 +376,12 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
   return (
     <div
       className="fixed inset-0 z-[1000] flex animate-overlay-in items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
-      onClick={() => !loading && onClose()}
+      {...backdrop}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-modal-title"
-        onClick={(e) => e.stopPropagation()}
         className="flex max-h-[92vh] w-full max-w-[600px] animate-modal-in flex-col overflow-hidden rounded-2xl bg-white shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)]"
       >
         {/* Cabeçalho */}
@@ -777,7 +805,11 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
               <button type="button" onClick={onClose} disabled={loading} className={btnSecondary}>
                 Cancelar
               </button>
-              <button type="submit" disabled={loading || isUploading} className={btnPrimary}>
+              <button
+                type="submit"
+                disabled={loading || isUploading || (waitingColorGroup && linksState === "loading")}
+                className={btnPrimary}
+              >
                 {loading ? (
                   <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
                 ) : isEdit ? (

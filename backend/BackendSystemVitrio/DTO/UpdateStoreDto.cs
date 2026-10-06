@@ -15,5 +15,8 @@ namespace BackendSystemVitrio.DTO
 
         // Permite ativar/pausar a loja (soft toggle, não deleção).
         public bool? IsActive { get; set; }
+
+        // E-mail para o dono a cada pedido novo.
+        public bool? NotifyNewOrdersByEmail { get; set; }
     }
 }

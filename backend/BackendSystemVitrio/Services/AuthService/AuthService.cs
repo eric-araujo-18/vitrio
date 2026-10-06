@@ -46,7 +46,7 @@ namespace BackendSystemVitrio.Services.AuthService
             {
                 var normalizedCpf = SlugHelper.OnlyDigits(dto.Cpf);
 
-                if (normalizedCpf is null || normalizedCpf.Length != 11)
+                if (!ValidationHelper.IsValidCpf(normalizedCpf))
                 {
                     response.Dados = null;
                     response.Mensagem = "CPF inválido.";
@@ -63,12 +63,26 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                if (string.IsNullOrWhiteSpace(dto.Name))
+                var name = dto.Name?.Trim() ?? "";
+                if (name.Length < 2 || name.Length > ValidationHelper.MaxNameLength)
                 {
                     response.Dados = null;
-                    response.Mensagem = "Informe seu nome.";
+                    response.Mensagem = name.Length < 2 ? "Informe seu nome." : $"O nome pode ter no máximo {ValidationHelper.MaxNameLength} caracteres.";
                     response.Status = false;
                     return response;
+                }
+
+                string? phone = null;
+                if (!string.IsNullOrWhiteSpace(dto.Phone))
+                {
+                    phone = SlugHelper.OnlyDigits(dto.Phone);
+                    if (phone is null || phone.Length < 10 || phone.Length > 11)
+                    {
+                        response.Dados = null;
+                        response.Mensagem = "Telefone inválido. Use DDD + número.";
+                        response.Status = false;
+                        return response;
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < PasswordHelper.MinLength)
@@ -79,7 +93,14 @@ namespace BackendSystemVitrio.Services.AuthService
                     return response;
                 }
 
-                var email = dto.Email.Trim().ToLowerInvariant();
+                var email = dto.Email?.Trim().ToLowerInvariant() ?? "";
+                if (!ValidationHelper.IsValidEmail(email))
+                {
+                    response.Dados = null;
+                    response.Mensagem = "Informe um e-mail válido.";
+                    response.Status = false;
+                    return response;
+                }
 
                 var emailExists = await _context.User.AnyAsync(u => u.Email == email);
                 if (emailExists)
@@ -94,11 +115,11 @@ namespace BackendSystemVitrio.Services.AuthService
 
                 var user = new User
                 {
-                    Name = dto.Name.Trim(),
+                    Name = name,
                     Email = email,
                     // Cadastro público sempre cria lojista. Admin só direto no banco.
                     Role = Role.Shopkeeper,
-                    Phone = string.IsNullOrWhiteSpace(dto.Phone) ? null : dto.Phone.Trim(),
+                    Phone = phone,
                     Cpf = normalizedCpf,
                     PasswordHash = hash,
                     PasswordSalt = salt
@@ -131,9 +152,11 @@ namespace BackendSystemVitrio.Services.AuthService
                 var name = dto.Name?.Trim() ?? "";
                 if (name.Length < 2)
                     return Response<string>.Fail("Informe seu nome.");
+                if (name.Length > ValidationHelper.MaxNameLength)
+                    return Response<string>.Fail($"O nome pode ter no máximo {ValidationHelper.MaxNameLength} caracteres.");
 
                 var email = dto.Email?.Trim().ToLowerInvariant() ?? "";
-                if (!IsValidEmail(email))
+                if (!ValidationHelper.IsValidEmail(email))
                     return Response<string>.Fail("Informe um e-mail válido.");
 
                 if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < PasswordHelper.MinLength)
@@ -170,20 +193,6 @@ namespace BackendSystemVitrio.Services.AuthService
             {
                 _logger.LogError(ex, "Erro ao criar conta");
                 return Response<string>.Fail("Erro ao criar conta. Tente novamente.");
-            }
-        }
-
-        private static bool IsValidEmail(string email)
-        {
-            if (email.Length is < 5 or > 254 || !email.Contains('@'))
-                return false;
-            try
-            {
-                return new System.Net.Mail.MailAddress(email).Address == email;
-            }
-            catch
-            {
-                return false;
             }
         }
 
@@ -373,7 +382,7 @@ namespace BackendSystemVitrio.Services.AuthService
             try
             {
                 var email = dto.Email?.Trim().ToLowerInvariant() ?? "";
-                if (!IsValidEmail(email))
+                if (!ValidationHelper.IsValidEmail(email))
                     return Response<string>.Fail("Informe um e-mail válido.");
 
                 var user = await _context.User.FirstOrDefaultAsync(u => u.Email == email && u.DeletionDate == null);

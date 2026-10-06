@@ -150,12 +150,7 @@ namespace BackendSystemVitrio.Services.ProductService
         {
             try
             {
-                var product = await OwnedProducts(userId)
-                    .Include(p => p.Images)
-                    .Include(p => p.Variants)
-                    .FirstOrDefaultAsync(p => p.Id == productId);
-
-                if (product is null)
+                if (!await OwnedProducts(userId).AnyAsync(p => p.Id == productId))
                     return Response<ProductResponseDto>.Fail("Produto não encontrado.");
 
                 var validationError = ValidateFields(dto.Name, dto.Price, dto.PromotionalPrice, dto.StockQuantity, dto.Images)
@@ -163,6 +158,16 @@ namespace BackendSystemVitrio.Services.ProductService
                                       ?? ValidateColor(dto.ColorName, dto.ColorHex, dto.ColorLinkedProductId);
                 if (validationError is not null)
                     return Response<ProductResponseDto>.Fail(validationError);
+
+                // Trava o estoque deste produto até salvar: um pedido feito agora espera, e o
+                // estoque lido abaixo é o atual (com as vendas feitas enquanto o lojista editava).
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                await LockStockAsync(productId);
+
+                var product = await _context.Product
+                    .Include(p => p.Images)
+                    .Include(p => p.Variants)
+                    .FirstAsync(p => p.Id == productId);
 
                 var slug = SlugHelper.Slugify(string.IsNullOrWhiteSpace(dto.Slug) ? dto.Name : dto.Slug, "produto");
                 if (slug != product.Slug && await SlugInUseAsync(product.StoreId, slug, product.Id))
@@ -193,7 +198,7 @@ namespace BackendSystemVitrio.Services.ProductService
                 product.Sku = EmptyToNull(dto.Sku);
                 product.Price = dto.Price;
                 product.PromotionalPrice = dto.PromotionalPrice;
-                product.StockQuantity = dto.StockQuantity;
+                product.StockQuantity = AdjustStock(product.StockQuantity, dto.StockQuantity, dto.OriginalStockQuantity);
                 product.IsActive = dto.IsActive;
                 product.IsFeatured = dto.IsFeatured;
                 product.ColorName = EmptyToNull(dto.ColorName);
@@ -218,6 +223,7 @@ namespace BackendSystemVitrio.Services.ProductService
                     product.StockQuantity = product.Variants.Sum(v => v.StockQuantity);
 
                 await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
                 return await ReloadAsDtoAsync(product.Id, userId, "Produto atualizado com sucesso.");
             }
@@ -404,10 +410,29 @@ namespace BackendSystemVitrio.Services.ProductService
                 }
                 else
                 {
-                    existing.StockQuantity = item.StockQuantity;
+                    var original = incoming.First(v => v.Size.Trim().ToUpperInvariant() == item.Size).OriginalStockQuantity;
+                    existing.StockQuantity = AdjustStock(existing.StockQuantity, item.StockQuantity, original);
                     existing.SortOrder = item.SortOrder;
                 }
             }
+        }
+
+        // Estoque novo de um produto ou tamanho na edição. Com o valor que o formulário mostrava
+        // ao abrir (original), aplica só a diferença que o lojista digitou sobre o estoque atual:
+        // se ele não mexeu, as vendas feitas enquanto editava continuam descontadas; se mudou de
+        // 10 para 15 e saíram 2 nesse meio-tempo, fica 13.
+        private static int AdjustStock(int current, int edited, int? original)
+            => original is int before ? Math.Max(0, current + (edited - before)) : edited;
+
+        // Trava as linhas de estoque do produto (tamanhos, depois o total) até o fim da transação.
+        // É a mesma ordem em que os pedidos e cancelamentos mexem no estoque (ver
+        // AppDbContextExtensions.RestoreStockAsync), então um não fica esperando o outro para sempre.
+        private async Task LockStockAsync(int productId)
+        {
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM \"ProductVariant\" WHERE \"ProductId\" = {productId} ORDER BY \"Id\" FOR UPDATE");
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM \"Product\" WHERE \"Id\" = {productId} FOR UPDATE");
         }
 
         // Normaliza a ordem (0..n-1) conforme a posição enviada pelo frontend.

@@ -41,6 +41,8 @@ export interface UpdateProfilePayload {
   name: string;
   email: string;
   phone: string;
+  /** Obrigatória só quando o e-mail muda. */
+  currentPassword?: string;
 }
 
 export interface ChangePasswordPayload {
@@ -69,6 +71,8 @@ export interface Store {
   secondaryColor: string;
   tertiaryColor: string;
   isActive: boolean;
+  /** E-mail para o dono a cada pedido novo. */
+  notifyNewOrdersByEmail: boolean;
   creationDate: string;
   /** Ativa, mas fora do ar porque passou do limite de lojas do plano atual. */
   blockedByPlan: boolean;
@@ -92,6 +96,7 @@ export interface CreateStorePayload {
 // Para limpar um campo opcional, mande string vazia "".
 export interface UpdateStorePayload extends Partial<CreateStorePayload> {
   isActive?: boolean;
+  notifyNewOrdersByEmail?: boolean;
 }
 
 // ===== Access Token em memória (nunca em localStorage/cookie legível por JS) =====
@@ -137,7 +142,7 @@ async function parseResponse<T>(res: Response): Promise<ApiResponse<T>> {
 // concorrentes (se 3 requisições tomarem 401 ao mesmo tempo, só dispara 1 refresh).
 async function tryRefreshAccessToken(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = (async () => {
+    refreshPromise = withRefreshLock(async () => {
       try {
         const res = await fetch(`${API_URL}/api/Auth/refresh`, {
           method: "POST",
@@ -156,13 +161,24 @@ async function tryRefreshAccessToken(): Promise<boolean> {
       } catch {
         setAccessToken(null);
         return false;
-      } finally {
-        refreshPromise = null;
       }
-    })();
+    }).finally(() => {
+      refreshPromise = null;
+    });
   }
 
   return refreshPromise;
+}
+
+// Cada refresh troca o cookie por um novo. Se duas abas renovassem ao mesmo tempo com o mesmo
+// cookie, uma delas falharia e sairia da conta. A trava do navegador (Web Locks, compartilhada
+// entre as abas do site) faz uma esperar a outra: a segunda já usa o cookie novo.
+async function withRefreshLock<T>(run: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    // A trava fica presa até a Promise de run() terminar.
+    return await navigator.locks.request("vitrio-auth-refresh", run);
+  }
+  return run();
 }
 
 export async function request<T>(

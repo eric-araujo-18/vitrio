@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { CircleAlert, CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
 
 /*
@@ -254,6 +255,9 @@ export function ConfirmDialog({
   busy?: boolean;
   error?: string | null;
 }) {
+  // Fecha clicando fora, mas não quando o mouse só termina fora.
+  const backdrop = useBackdropDismiss(() => !busy && onCancel());
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onCancel();
     const previous = document.body.style.overflow;
@@ -268,13 +272,12 @@ export function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-[1000] flex animate-overlay-in items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
-      onClick={() => !busy && onCancel()}
+      {...backdrop}
     >
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
-        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[420px] animate-modal-in rounded-2xl bg-white p-6 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)]"
       >
         <div className="flex items-start gap-3.5">

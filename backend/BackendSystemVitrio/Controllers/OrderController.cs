@@ -19,10 +19,11 @@ namespace BackendSystemVitrio.Controllers
             _orderService = orderService;
         }
 
-        // GET /api/Order/store/{storeId}?status=Pending
+        // GET /api/Order/store/{storeId}?status=Pending&beforeId=123
+        // Do mais novo para o mais antigo, em páginas; beforeId continua a partir desse pedido.
         [HttpGet("store/{storeId:int}")]
-        public async Task<IActionResult> GetByStore(int storeId, [FromQuery] OrderStatus? status)
-            => Ok(await _orderService.GetOrdersByStoreAsync(storeId, User.GetUserId(), status));
+        public async Task<IActionResult> GetByStore(int storeId, [FromQuery] OrderStatus? status, [FromQuery] int? beforeId)
+            => Ok(await _orderService.GetOrdersByStoreAsync(storeId, User.GetUserId(), status, beforeId));
 
         // GET /api/Order/store/{storeId}/pending-summary -> alerta de pedido novo no painel
         [HttpGet("store/{storeId:int}/pending-summary")]

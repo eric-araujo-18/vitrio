@@ -78,7 +78,7 @@ namespace BackendSystemVitrio.Services.StoreService
                 var normalizedCnpj = SlugHelper.OnlyDigits(dto.Cnpj);
                 if (normalizedCnpj is not null)
                 {
-                    if (normalizedCnpj.Length != 14)
+                    if (!ValidationHelper.IsValidCnpj(normalizedCnpj))
                         return Response<StoreDto>.Fail("CNPJ inválido.");
 
                     if (await _context.Store.AnyAsync(s => s.Cnpj == normalizedCnpj && s.DeletionDate == null))
@@ -144,7 +144,7 @@ namespace BackendSystemVitrio.Services.StoreService
                     var cnpj = SlugHelper.OnlyDigits(dto.Cnpj);
                     if (cnpj is not null)
                     {
-                        if (cnpj.Length != 14)
+                        if (!ValidationHelper.IsValidCnpj(cnpj))
                             return Response<StoreDto>.Fail("CNPJ inválido.");
 
                         if (await _context.Store.AnyAsync(s => s.Cnpj == cnpj && s.Id != store.Id && s.DeletionDate == null))
@@ -176,6 +176,7 @@ namespace BackendSystemVitrio.Services.StoreService
                 }
 
                 if (dto.IsActive.HasValue) store.IsActive = dto.IsActive.Value;
+                if (dto.NotifyNewOrdersByEmail.HasValue) store.NotifyNewOrdersByEmail = dto.NotifyNewOrdersByEmail.Value;
 
                 await _context.SaveChangesAsync();
 
@@ -196,11 +197,28 @@ namespace BackendSystemVitrio.Services.StoreService
                 if (store is null)
                     return Response<string>.Fail("Loja não encontrada.");
 
+                // Loja excluída some do painel, e com ela os pedidos: os que ainda estão em
+                // andamento (inclusive os já pagos online) ficariam sem ninguém para entregar,
+                // cancelar ou estornar.
+                var openOrders = await _context.Order.CountAsync(o => o.StoreId == store.Id &&
+                    (o.Status == OrderStatus.AwaitingPayment || o.Status == OrderStatus.Pending ||
+                     o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Shipped));
+                if (openOrders > 0)
+                    return Response<string>.Fail(
+                        $"Esta loja tem {openOrders} {(openOrders == 1 ? "pedido" : "pedidos")} em andamento. " +
+                        "Conclua ou cancele antes de excluir a loja (ou pause a loja, que sai da vitrine sem perder nada).");
+
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+
                 // Soft delete: some do painel e da vitrine, mas os dados (e pedidos) ficam.
                 store.DeletionDate = DateTime.UtcNow;
                 store.IsActive = false;
-
                 await _context.SaveChangesAsync();
+
+                // A conta do Mercado Pago conectada não serve mais para nada: apaga os tokens.
+                await _context.StorePaymentAccount.Where(a => a.StoreId == store.Id).ExecuteDeleteAsync();
+
+                await transaction.CommitAsync();
 
                 return Response<string>.Ok("", "Loja excluída com sucesso.");
             }
@@ -361,6 +379,7 @@ namespace BackendSystemVitrio.Services.StoreService
             SecondaryColor = s.SecondaryColor,
             TertiaryColor = s.TertiaryColor,
             IsActive = s.IsActive,
+            NotifyNewOrdersByEmail = s.NotifyNewOrdersByEmail,
             CreationDate = s.CreationDate
         };
     }

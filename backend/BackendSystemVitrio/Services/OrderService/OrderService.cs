@@ -17,27 +17,34 @@ namespace BackendSystemVitrio.Services.OrderService
     {
         private const int MaxItemsPerOrder = 50;
         private const int MaxQuantityPerItem = 999;
+        // Pedidos por página no painel (ORDERS_PAGE_SIZE no frontend).
+        private const int OrdersPageSize = 50;
+        // Mesmo limite do campo no checkout.
+        private const int MaxNotesLength = 500;
 
         private readonly AppDbContext _context;
         private readonly IOrderPaymentService _payments;
+        private readonly NewOrderNotifier _notifier;
         private readonly MercadoPagoOptions _mercadoPagoOptions;
         private readonly ILogger<OrderService> _logger;
 
         public OrderService(
             AppDbContext context,
             IOrderPaymentService payments,
+            NewOrderNotifier notifier,
             IOptions<MercadoPagoOptions> mercadoPagoOptions,
             ILogger<OrderService> logger)
         {
             _context = context;
             _payments = payments;
+            _notifier = notifier;
             _mercadoPagoOptions = mercadoPagoOptions.Value;
             _logger = logger;
         }
 
         // ===== Painel do lojista =====
 
-        public async Task<Response<List<OrderResponseDto>>> GetOrdersByStoreAsync(int storeId, int userId, OrderStatus? status)
+        public async Task<Response<List<OrderResponseDto>>> GetOrdersByStoreAsync(int storeId, int userId, OrderStatus? status, int? beforeId = null)
         {
             try
             {
@@ -48,10 +55,14 @@ namespace BackendSystemVitrio.Services.OrderService
                 var query = _context.Order.Where(o => o.StoreId == storeId);
                 if (status.HasValue)
                     query = query.Where(o => o.Status == status.Value);
+                // Pelo id (e não por "pular N"): pedidos novos chegando no topo não fazem a
+                // próxima página repetir pedidos.
+                if (beforeId.HasValue)
+                    query = query.Where(o => o.Id < beforeId.Value);
 
                 var orders = await query
-                    .OrderByDescending(o => o.CreationDate)
-                    .Take(200)
+                    .OrderByDescending(o => o.Id)
+                    .Take(OrdersPageSize)
                     .Select(ToDtoExpression)
                     .ToListAsync();
 
@@ -128,6 +139,7 @@ namespace BackendSystemVitrio.Services.OrderService
                     return Response<OrderResponseDto>.Fail("Status inválido.");
 
                 var order = await OwnedOrders(userId)
+                    .AsNoTracking()
                     .Include(o => o.Items)
                     .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -148,9 +160,12 @@ namespace BackendSystemVitrio.Services.OrderService
                             "Este pedido está esperando o pagamento do cliente. Ele muda sozinho quando o pagamento for aprovado.");
 
                     // Se o cliente pagar mesmo assim, o pagamento é estornado automaticamente.
-                    return await _payments.CancelUnpaidAsync(order.Id)
-                        ? await ReloadAsDtoAsync(order.Id, "Pedido cancelado.")
-                        : Response<OrderResponseDto>.Fail("O pagamento deste pedido acabou de ser aprovado. Atualize a lista de pedidos.");
+                    return await _payments.CancelAwaitingAsync(order.Id, order.StoreId) switch
+                    {
+                        true => await ReloadAsDtoAsync(order.Id, "Pedido cancelado."),
+                        false => Response<OrderResponseDto>.Fail("O pagamento deste pedido acabou de ser aprovado. Atualize a lista de pedidos."),
+                        null => Response<OrderResponseDto>.Fail("Não foi possível conferir o pagamento no Mercado Pago agora. Tente de novo em instantes."),
+                    };
                 }
 
                 // Pedido cancelado é final: reabrir exigiria reservar o estoque de novo,
@@ -158,32 +173,74 @@ namespace BackendSystemVitrio.Services.OrderService
                 if (order.Status == OrderStatus.Canceled)
                     return Response<OrderResponseDto>.Fail("Pedidos cancelados não podem ser reabertos.");
 
-                if (order.Status == OrderStatus.Delivered && status != OrderStatus.Canceled)
+                if (order.Status == OrderStatus.Delivered)
                     return Response<OrderResponseDto>.Fail("Pedido já entregue.");
 
-                // Cancelar um pedido pago online devolve o dinheiro ao cliente. Sem o estorno,
-                // o pedido não é cancelado (o lojista tenta de novo ou estorna pelo Mercado Pago).
+                if (!AllowedNextStatus.TryGetValue(order.Status, out var allowed) || !allowed.Contains(status))
+                    return Response<OrderResponseDto>.Fail(
+                        $"Não dá para passar de {StatusLabel(order.Status)} para {StatusLabel(status)}.");
+
+                // Cancelar um pedido pago online devolve o dinheiro ao cliente. Se o estorno falhar
+                // por um erro passageiro, o pedido não é cancelado (o lojista tenta de novo). Se a
+                // conta conectada não alcança mais o pagamento (desconectada, acesso revogado ou
+                // outra conta), cancela, e o lojista devolve o valor pelo Mercado Pago.
+                var refunded = false;
+                var manualRefund = false;
                 if (status == OrderStatus.Canceled && order.PaymentStatus == OrderPaymentStatus.Approved)
                 {
-                    if (!await _payments.RefundAsync(order))
-                        return Response<OrderResponseDto>.Fail(
-                            "Não foi possível estornar o pagamento no Mercado Pago. Tente de novo ou faça o estorno pelo painel do Mercado Pago e cancele depois.");
-                    order.PaymentStatus = OrderPaymentStatus.Refunded;
+                    switch (await _payments.RefundAsync(order))
+                    {
+                        case RefundResult.Refunded:
+                            refunded = true;
+                            break;
+                        case RefundResult.Manual:
+                            manualRefund = true;
+                            break;
+                        default:
+                            return Response<OrderResponseDto>.Fail(
+                                "Não foi possível estornar o pagamento no Mercado Pago agora. Tente de novo em alguns minutos.");
+                    }
                 }
 
                 await using var transaction = await _context.Database.BeginTransactionAsync();
+                var now = DateTime.UtcNow;
+                int affected;
 
-                // Devolve ao estoque o que foi reservado na criação do pedido.
                 if (status == OrderStatus.Canceled)
-                    await _context.RestoreStockAsync(order.Items);
+                {
+                    // Condicional: dois cancelamentos ao mesmo tempo (duas abas) não devolvem o
+                    // estoque duas vezes. Só o primeiro muda o pedido; o outro não encontra nada.
+                    affected = await _context.Order
+                        .Where(o => o.Id == order.Id && o.Status != OrderStatus.Canceled && o.Status != OrderStatus.AwaitingPayment)
+                        .ExecuteUpdateAsync(set => set
+                            .SetProperty(o => o.Status, OrderStatus.Canceled)
+                            .SetProperty(o => o.PaymentStatus, o => refunded ? OrderPaymentStatus.Refunded : o.PaymentStatus)
+                            .SetProperty(o => o.UpdatedDate, now));
 
-                order.Status = status;
-                order.UpdatedDate = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
+                    // Devolve ao estoque o que foi reservado na criação do pedido.
+                    if (affected == 1)
+                        await _context.RestoreStockAsync(order.Items);
+                }
+                else
+                {
+                    // Só se ninguém mudou o pedido desde que ele foi lido.
+                    var current = order.Status;
+                    affected = await _context.Order
+                        .Where(o => o.Id == order.Id && o.Status == current)
+                        .ExecuteUpdateAsync(set => set
+                            .SetProperty(o => o.Status, status)
+                            .SetProperty(o => o.UpdatedDate, now));
+                }
+
+                if (affected == 0)
+                    return Response<OrderResponseDto>.Fail(
+                        "Este pedido foi alterado ao mesmo tempo em outra tela. Atualize a lista de pedidos.");
+
                 await transaction.CommitAsync();
 
-                return await ReloadAsDtoAsync(order.Id, order.PaymentStatus == OrderPaymentStatus.Refunded && status == OrderStatus.Canceled
-                    ? "Pedido cancelado e pagamento estornado ao cliente."
+                return await ReloadAsDtoAsync(order.Id,
+                    refunded ? "Pedido cancelado e pagamento estornado ao cliente."
+                    : manualRefund ? "Pedido cancelado. A conta do Mercado Pago conectada à loja não consegue mais estornar este pagamento: devolva o valor ao cliente pelo app do Mercado Pago."
                     : "Status do pedido atualizado.");
             }
             catch (Exception ex)
@@ -279,10 +336,21 @@ namespace BackendSystemVitrio.Services.OrderService
 
                 if (string.IsNullOrWhiteSpace(dto.CustomerName) || dto.CustomerName.Trim().Length < 2)
                     return Response<OrderCreatedDto>.Fail("Informe seu nome.");
+                if (dto.CustomerName.Trim().Length > ValidationHelper.MaxNameLength)
+                    return Response<OrderCreatedDto>.Fail($"O nome pode ter no máximo {ValidationHelper.MaxNameLength} caracteres.");
 
                 var phone = SlugHelper.OnlyDigits(dto.CustomerPhone);
                 if (phone is null || phone.Length < 10 || phone.Length > 11)
                     return Response<OrderCreatedDto>.Fail("Informe um telefone válido com DDD.");
+
+                // No pagamento online o e-mail vai para o Mercado Pago, que recusa um inválido.
+                var email = string.IsNullOrWhiteSpace(dto.CustomerEmail) ? null : dto.CustomerEmail.Trim();
+                if (email is not null && !ValidationHelper.IsValidEmail(email))
+                    return Response<OrderCreatedDto>.Fail("E-mail inválido.");
+
+                var notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+                if (notes?.Length > MaxNotesLength)
+                    return Response<OrderCreatedDto>.Fail($"As observações podem ter no máximo {MaxNotesLength} caracteres.");
 
                 if (dto.Items is null || dto.Items.Count == 0)
                     return Response<OrderCreatedDto>.Fail("O carrinho está vazio.");
@@ -314,7 +382,7 @@ namespace BackendSystemVitrio.Services.OrderService
                         return Response<OrderCreatedDto>.Fail(addressError);
                 }
 
-                // Junta itens repetidos do mesmo produto e tamanho.
+                // Junta itens repetidos do mesmo produto e tamanho (na ordem do carrinho).
                 var requested = dto.Items
                     .GroupBy(i => new { i.ProductId, i.VariantId })
                     .Select(g => new { g.Key.ProductId, g.Key.VariantId, Quantity = g.Sum(i => i.Quantity) })
@@ -328,8 +396,9 @@ namespace BackendSystemVitrio.Services.OrderService
                 await using var transaction = await _context.Database.BeginTransactionAsync();
 
                 // Preço SEMPRE vem do banco — nunca confiar no valor enviado pelo navegador.
-                // Só aceita produtos visíveis na vitrine (ativos e dentro do limite do plano).
-                var products = await _context.ProductsWithinPlan(store.Id, found.Plan)
+                // Só aceita produtos visíveis na vitrine (ativos, dentro do limite do plano e fora
+                // de categorias desativadas).
+                var products = await (await _context.VisibleProductsAsync(found))
                     .Include(p => p.Images)
                     .Include(p => p.Variants)
                     .Where(p => productIds.Contains(p.Id))
@@ -342,8 +411,8 @@ namespace BackendSystemVitrio.Services.OrderService
                     Code = await GenerateUniqueCodeAsync(),
                     CustomerName = dto.CustomerName.Trim(),
                     CustomerPhone = phone,
-                    CustomerEmail = string.IsNullOrWhiteSpace(dto.CustomerEmail) ? null : dto.CustomerEmail.Trim(),
-                    Notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim(),
+                    CustomerEmail = email,
+                    Notes = notes,
                     ShippingCep = shipping!.Cep,
                     ShippingState = shipping.State,
                     ShippingCity = shipping.City,
@@ -363,7 +432,14 @@ namespace BackendSystemVitrio.Services.OrderService
                     order.PaymentDeadline = DateTime.UtcNow.AddMinutes(_mercadoPagoOptions.EffectiveOrderPaymentMinutes);
                 }
 
-                foreach (var item in requested)
+                // A baixa do estoque segue a ordem (produto, tamanho), a mesma do cancelamento e da
+                // edição do produto (ver RestoreStockAsync): assim duas operações ao mesmo tempo não
+                // ficam esperando uma pela outra. Os itens do pedido ficam na ordem do carrinho.
+                var created = new SortedList<int, OrderItem>();
+                foreach (var (item, position) in requested
+                             .Select((item, position) => (item, position))
+                             .OrderBy(x => x.item.ProductId)
+                             .ThenBy(x => x.item.VariantId))
                 {
                     if (!products.TryGetValue(item.ProductId, out var product))
                         return Response<OrderCreatedDto>.Fail("Um dos produtos do carrinho não está mais disponível.");
@@ -407,7 +483,7 @@ namespace BackendSystemVitrio.Services.OrderService
                             return Response<OrderCreatedDto>.Fail($"Estoque insuficiente para \"{product.Name}\".");
                     }
 
-                    order.Items.Add(new OrderItem
+                    created.Add(position, new OrderItem
                     {
                         OrderId = 0, // preenchido pelo EF via navigation
                         ProductId = product.Id,
@@ -421,11 +497,19 @@ namespace BackendSystemVitrio.Services.OrderService
                     });
                 }
 
+                foreach (var item in created.Values)
+                    order.Items.Add(item);
+
                 order.Total = order.Items.Sum(i => i.UnitPrice * i.Quantity);
 
                 _context.Order.Add(order);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Pedido pago online só vira pedido de verdade quando o pagamento é aprovado: o aviso
+                // ao lojista sai nessa hora (OrderPaymentService).
+                if (!online)
+                    await _notifier.NotifyAsync(order.Id);
 
                 string? checkoutUrl = null;
                 if (online)
@@ -464,6 +548,28 @@ namespace BackendSystemVitrio.Services.OrderService
         }
 
         // ===== Helpers =====
+
+        // Próximos status que o lojista pode escolher: os mesmos que o painel oferece
+        // (ORDER_NEXT_STATUS em lib/format.ts). Entregue e Cancelado são finais; "Aguardando
+        // pagamento" tem regra própria. Cancelar um pedido entregue devolveria ao estoque algo
+        // que já saiu da loja.
+        private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedNextStatus = new()
+        {
+            [OrderStatus.Pending] = [OrderStatus.Confirmed, OrderStatus.Canceled],
+            [OrderStatus.Confirmed] = [OrderStatus.Shipped, OrderStatus.Delivered, OrderStatus.Canceled],
+            [OrderStatus.Shipped] = [OrderStatus.Delivered, OrderStatus.Canceled],
+        };
+
+        private static string StatusLabel(OrderStatus status) => status switch
+        {
+            OrderStatus.AwaitingPayment => "Aguardando pagamento",
+            OrderStatus.Pending => "Pendente",
+            OrderStatus.Confirmed => "Confirmado",
+            OrderStatus.Shipped => "Enviado",
+            OrderStatus.Delivered => "Entregue",
+            OrderStatus.Canceled => "Cancelado",
+            _ => status.ToString(),
+        };
 
         private IQueryable<Order> OwnedOrders(int userId)
             => _context.Order.Where(o => o.Store!.UserId == userId && o.Store.DeletionDate == null);

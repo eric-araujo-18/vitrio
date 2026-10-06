@@ -8,6 +8,7 @@ import {
   Copy,
   Link as LinkIcon,
   LoaderCircle,
+  Mail,
   Pause,
   Play,
   Power,
@@ -15,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { deleteStore, goOnlineStore, unwrap, updateStore } from "@/lib/api";
+import { useAuth } from "@/lib/auth_context";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
 import OnlinePaymentCard from "../../components/OnlinePaymentCard";
@@ -36,7 +38,10 @@ import {
 
 export default function ConfiguracoesPage() {
   const { store, setStore } = useShopkeeperStore();
+  const { user } = useAuth();
   const router = useRouter();
+  const [savingNotify, setSavingNotify] = useState(false);
+  const [notifyError, setNotifyError] = useState<string | null>(null);
 
   const [name, setName] = useState(store.name);
   const [cnpj, setCnpj] = useState(store.cnpj ? formatCnpj(store.cnpj) : "");
@@ -50,6 +55,8 @@ export default function ConfiguracoesPage() {
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  // Fica dentro do quadro de exclusão (ex.: loja com pedidos em andamento), não no topo da página.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const publicUrl =
     typeof window !== "undefined" ? `${window.location.origin}/store/${store.slug}` : `/store/${store.slug}`;
@@ -109,6 +116,18 @@ export default function ConfiguracoesPage() {
     }
   }
 
+  async function handleToggleNotify(enabled: boolean) {
+    setSavingNotify(true);
+    setNotifyError(null);
+    try {
+      setStore(await unwrap(updateStore(store.id, { notifyNewOrdersByEmail: enabled })));
+    } catch (err) {
+      setNotifyError(err instanceof Error ? err.message : "Erro ao salvar o aviso por e-mail.");
+    } finally {
+      setSavingNotify(false);
+    }
+  }
+
   async function handleToggleActive() {
     setToggling(true);
     setError(null);
@@ -140,18 +159,19 @@ export default function ConfiguracoesPage() {
   function cancelDelete() {
     setConfirmingDelete(false);
     setDeleteConfirmText("");
+    setDeleteError(null);
   }
 
   async function handleDelete() {
     if (!deleteNameMatches) return;
 
     setDeleting(true);
-    setError(null);
+    setDeleteError(null);
     try {
       await unwrap(deleteStore(store.id));
       router.replace("/menu/stores");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao excluir a loja.");
+      setDeleteError(err instanceof Error ? err.message : "Erro ao excluir a loja.");
       setDeleting(false);
     }
   }
@@ -253,6 +273,48 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         </form>
+
+        {/* Aviso de pedido novo por e-mail */}
+        <section className={card}>
+          <label htmlFor="notify-email" className="flex cursor-pointer items-start gap-4">
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <Mail size={18} aria-hidden="true" className="text-outline" />
+                <span className={cardTitle}>Avisar pedidos novos por e-mail</span>
+              </span>
+              <span className={`${cardSubtitle} block`}>
+                {user?.email ? (
+                  <>
+                    Enviamos um e-mail para <strong className="text-on-surface">{user.email}</strong> a cada pedido
+                    novo
+                  </>
+                ) : (
+                  "Enviamos um e-mail a cada pedido novo"
+                )}
+                , além do aviso aqui no painel. Pedidos pagos online avisam quando o pagamento é aprovado.
+              </span>
+            </span>
+            {/* Switch: checkbox real escondido + trilho desenhado */}
+            <input
+              id="notify-email"
+              type="checkbox"
+              role="switch"
+              checked={store.notifyNewOrdersByEmail}
+              disabled={savingNotify}
+              onChange={(e) => handleToggleNotify(e.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden="true"
+              className="relative mt-1 h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-container peer-focus-visible:ring-[3px] peer-focus-visible:ring-primary-container/25 peer-disabled:opacity-60 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5"
+            />
+          </label>
+          {notifyError && (
+            <div className="mt-3">
+              <ErrorBox>{notifyError}</ErrorBox>
+            </div>
+          )}
+        </section>
 
         {/* Pagamento online (Mercado Pago) */}
         <Suspense fallback={null}>
@@ -372,7 +434,11 @@ export default function ConfiguracoesPage() {
                 disabled={deleting}
                 className={`${input} focus:border-red-500 focus:ring-red-500/15`}
               />
-              <p className={hint}>Essa ação não pode ser desfeita pelo painel.</p>
+              <p className={hint}>
+                Essa ação não pode ser desfeita pelo painel. Lojas com pedidos em andamento só podem ser excluídas
+                depois que eles forem concluídos ou cancelados.
+              </p>
+              {deleteError && <ErrorBox>{deleteError}</ErrorBox>}
 
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={cancelDelete} disabled={deleting} className={btnSecondary}>

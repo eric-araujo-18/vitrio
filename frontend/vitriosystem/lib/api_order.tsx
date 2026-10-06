@@ -64,8 +64,15 @@ export interface StoreDashboard {
   recentOrders: OrderSummary[];
 }
 
-export function getOrdersByStore(storeId: number, status?: OrderStatus) {
-  const query = status ? `?status=${status}` : "";
+/** Pedidos por página no painel (igual a OrderService.OrdersPageSize no backend). */
+export const ORDERS_PAGE_SIZE = 50;
+
+/** Do mais novo para o mais antigo. beforeId: continua a lista a partir desse pedido ("Carregar mais"). */
+export function getOrdersByStore(storeId: number, status?: OrderStatus, beforeId?: number) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (beforeId) params.set("beforeId", String(beforeId));
+  const query = params.size ? `?${params}` : "";
   return request<Order[]>(`/api/Order/store/${storeId}${query}`, "GET", undefined, true);
 }
 

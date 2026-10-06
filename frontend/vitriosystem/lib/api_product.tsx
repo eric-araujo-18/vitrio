@@ -55,6 +55,8 @@ export interface ProductImagePayload {
 export interface ProductVariantPayload {
   size: string;
   stockQuantity: number;
+  /** Só na edição: o estoque deste tamanho quando o formulário abriu (ausente = tamanho novo). */
+  originalStockQuantity?: number;
 }
 
 export interface CreateProductPayload {
@@ -79,7 +81,13 @@ export interface CreateProductPayload {
 }
 
 // Edição é "completa": o formulário manda todos os campos de novo.
-export type UpdateProductPayload = Omit<CreateProductPayload, "storeId">;
+export type UpdateProductPayload = Omit<CreateProductPayload, "storeId"> & {
+  /**
+   * Estoque que o formulário mostrava ao abrir. O backend aplica só a diferença digitada sobre o
+   * estoque atual, então vendas feitas enquanto o lojista editava continuam descontadas.
+   */
+  originalStockQuantity?: number;
+};
 
 export function getProductsByStore(storeId: number) {
   return request<Product[]>(`/api/Product/store/${storeId}`, "GET", undefined, true);

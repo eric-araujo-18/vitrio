@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Helpers;
@@ -9,8 +8,6 @@ namespace BackendSystemVitrio.Services.UserService
 {
     public class UserService : IUserService
     {
-        private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled);
-
         private readonly AppDbContext _context;
         private readonly ILogger<UserService> _logger;
 
@@ -29,25 +26,45 @@ namespace BackendSystemVitrio.Services.UserService
                     return Response<UserDto>.Fail("Usuário não encontrado.");
 
                 if (!string.IsNullOrWhiteSpace(dto.Name))
-                    user.Name = dto.Name.Trim();
+                {
+                    var name = dto.Name.Trim();
+                    if (name.Length < 2 || name.Length > ValidationHelper.MaxNameLength)
+                        return Response<UserDto>.Fail(name.Length < 2
+                            ? "Informe seu nome."
+                            : $"O nome pode ter no máximo {ValidationHelper.MaxNameLength} caracteres.");
+                    user.Name = name;
+                }
 
                 if (!string.IsNullOrWhiteSpace(dto.Email))
                 {
                     var email = dto.Email.Trim().ToLowerInvariant();
 
-                    if (!EmailRegex.IsMatch(email))
-                        return Response<UserDto>.Fail("E-mail inválido.");
+                    if (email != user.Email)
+                    {
+                        if (!ValidationHelper.IsValidEmail(email))
+                            return Response<UserDto>.Fail("E-mail inválido.");
 
-                    // Antes não checava: trocar pra um e-mail já usado estourava
-                    // o índice único e voltava uma mensagem de erro do banco.
-                    if (email != user.Email && await _context.User.AnyAsync(u => u.Email == email && u.Id != userId))
-                        return Response<UserDto>.Fail("Este e-mail já está em uso.");
+                        // O e-mail é por onde a senha é redefinida: trocar exige a senha atual.
+                        if (string.IsNullOrEmpty(dto.CurrentPassword) ||
+                            !PasswordHelper.VerifyPasswordHash(dto.CurrentPassword, user.PasswordHash, user.PasswordSalt))
+                            return Response<UserDto>.Fail("Para trocar o e-mail, informe sua senha atual corretamente.");
 
-                    user.Email = email;
+                        // Antes não checava: trocar pra um e-mail já usado estourava
+                        // o índice único e voltava uma mensagem de erro do banco.
+                        if (await _context.User.AnyAsync(u => u.Email == email && u.Id != userId))
+                            return Response<UserDto>.Fail("Este e-mail já está em uso.");
+
+                        user.Email = email;
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(dto.Phone))
-                    user.Phone = dto.Phone.Trim();
+                {
+                    var phone = SlugHelper.OnlyDigits(dto.Phone);
+                    if (phone is null || phone.Length < 10 || phone.Length > 11)
+                        return Response<UserDto>.Fail("Telefone inválido. Use DDD + número.");
+                    user.Phone = phone;
+                }
 
                 await _context.SaveChangesAsync();
 

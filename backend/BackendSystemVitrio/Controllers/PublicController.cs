@@ -39,10 +39,11 @@ namespace BackendSystemVitrio.Controllers
         public async Task<IActionResult> GetCategories(string slug)
             => Ok(await _publicService.GetCategoriesAsync(slug));
 
-        // GET /api/Public/stores/{slug}/products?category=roupas&search=camisa
+        // GET /api/Public/stores/{slug}/products?category=roupas&search=camisa&page=2
+        // Em páginas de 200: a vitrine busca a próxima enquanto a anterior vier cheia.
         [HttpGet("products")]
-        public async Task<IActionResult> GetProducts(string slug, [FromQuery] string? category, [FromQuery] string? search)
-            => Ok(await _publicService.GetProductsAsync(slug, category, search));
+        public async Task<IActionResult> GetProducts(string slug, [FromQuery] string? category, [FromQuery] string? search, [FromQuery] int page = 1)
+            => Ok(await _publicService.GetProductsAsync(slug, category, search, page));
 
         // GET /api/Public/stores/{slug}/products/{productSlug}
         [HttpGet("products/{productSlug}")]
@@ -72,6 +73,14 @@ namespace BackendSystemVitrio.Controllers
         [EnableRateLimiting("public-payment-status")]
         public async Task<IActionResult> GetOrderPayment(string slug, string code)
             => Ok(await _orderPayments.GetPublicStatusAsync(slug, code));
+
+        // POST /api/Public/stores/{slug}/orders/{code}/cancel
+        // O cliente desiste de um pedido que ainda espera pagamento: o estoque volta na hora, em
+        // vez de ficar reservado até o prazo. Quem tem o código do pedido é quem o fez.
+        [HttpPost("orders/{code}/cancel")]
+        [EnableRateLimiting("public-orders")]
+        public async Task<IActionResult> CancelUnpaidOrder(string slug, string code)
+            => Ok(await _orderPayments.CancelByCustomerAsync(slug, code));
 
         // GET /api/Public/stores/{slug}/orders/{code}/payment-return
         // Volta do checkout do Mercado Pago (back_url): manda o cliente para a vitrine, que mostra

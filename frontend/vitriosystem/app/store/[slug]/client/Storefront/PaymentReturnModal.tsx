@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CircleAlert, CircleCheck, CreditCard, LoaderCircle, MessageCircle, X } from "lucide-react";
 import { getOrderPayment, type OrderPaymentInfo } from "@/lib/api_public";
 import { formatPrice, formatTime, whatsappLink } from "@/lib/format";
+import { clearPendingPayment } from "@/lib/pending_payment";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { iconButton, storeOverlay, storePrimaryButton, storeSecondaryButton, useLockBodyScroll } from "./Ui";
 
 // Confere a cada 4s nos primeiros 2 minutos (o pagamento costuma ser confirmado logo) e
@@ -42,6 +44,7 @@ function PaymentReturnDialog({
   const [error, setError] = useState<string | null>(null);
 
   useLockBodyScroll();
+  const backdrop = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -65,6 +68,10 @@ function PaymentReturnDialog({
         }
         setInfo(res.dados);
         if (res.dados.status !== "AwaitingPayment") {
+          // Resolvido: a vitrine esquece o pedido salvo. Cancelado sem pagamento fica: ao fechar
+          // este aviso, o PendingPaymentBanner devolve os itens ao carrinho.
+          if (!(res.dados.status === "Canceled" && res.dados.paymentStatus === "Canceled"))
+            clearPendingPayment(slug, code);
           onSettled?.();
           return;
         }
@@ -85,12 +92,11 @@ function PaymentReturnDialog({
   const waiting = info?.status === "AwaitingPayment";
 
   return (
-    <div className={`${storeOverlay} flex items-center justify-center p-4`} onClick={onClose}>
+    <div className={`${storeOverlay} flex items-center justify-center p-4`} {...backdrop}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-return-title"
-        onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-[420px] rounded-2xl bg-white p-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.2)]"
       >
         <button type="button" onClick={onClose} aria-label="Fechar" className={`${iconButton} absolute top-3 right-3`}>
@@ -160,7 +166,7 @@ function PaymentReturnDialog({
               <p className="text-body-md text-slate-500">
                 {info.paymentStatus === "Refunded"
                   ? `O pedido #${info.code} foi cancelado e o valor foi devolvido para você.`
-                  : `O pedido #${info.code} foi cancelado sem pagamento (o prazo acabou ou a loja cancelou). Dá para fazer o pedido de novo.`}
+                  : `O pedido #${info.code} foi cancelado sem pagamento (o prazo acabou ou a loja cancelou). Os itens voltam para o seu carrinho para você fazer o pedido de novo.`}
               </p>
             </>
           )}

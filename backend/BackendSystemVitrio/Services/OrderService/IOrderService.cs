@@ -7,7 +7,8 @@ namespace BackendSystemVitrio.Services.OrderService
     public interface IOrderService
     {
         // Painel do lojista
-        Task<Response<List<OrderResponseDto>>> GetOrdersByStoreAsync(int storeId, int userId, OrderStatus? status);
+        // Em páginas, do mais novo para o mais antigo. beforeId: continua a partir desse pedido.
+        Task<Response<List<OrderResponseDto>>> GetOrdersByStoreAsync(int storeId, int userId, OrderStatus? status, int? beforeId = null);
         Task<Response<OrderResponseDto>> GetOrderByIdAsync(int orderId, int userId);
         Task<Response<OrderResponseDto>> UpdateStatusAsync(int orderId, int userId, OrderStatus status);
         Task<Response<PendingOrdersSummaryDto>> GetPendingSummaryAsync(int storeId, int userId);

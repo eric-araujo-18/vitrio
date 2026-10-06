@@ -11,6 +11,8 @@ namespace BackendSystemVitrio.Services.PublicService
     public class PublicService : IPublicService
     {
         private const string NotFound = "Loja não encontrada ou indisponível.";
+        // Produtos por página na vitrine (PRODUCTS_PAGE_SIZE no frontend).
+        public const int ProductsPageSize = 200;
 
         private readonly AppDbContext _context;
         private readonly IOrderPaymentService _payments;
@@ -49,8 +51,9 @@ namespace BackendSystemVitrio.Services.PublicService
             if (found is null)
                 return Response<List<PublicCategoryDto>>.Fail(NotFound);
 
-            // Só categorias ativas que tenham pelo menos um produto visível.
-            var visibleIds = VisibleProducts(found).Select(p => p.Id);
+            // Só categorias ativas que tenham pelo menos um produto visível (o que já deixa de fora
+            // as que estão dentro de uma categoria desativada).
+            var visibleIds = (await _context.VisibleProductsAsync(found)).Select(p => p.Id);
             var categories = await _context.Category
                 .Where(c => c.StoreId == found.Store.Id && c.IsActive && c.DeletionDate == null &&
                             c.Products.Any(p => visibleIds.Contains(p.Id)))
@@ -67,13 +70,13 @@ namespace BackendSystemVitrio.Services.PublicService
             return Response<List<PublicCategoryDto>>.Ok(categories);
         }
 
-        public async Task<Response<List<PublicProductDto>>> GetProductsAsync(string slug, string? categorySlug, string? search)
+        public async Task<Response<List<PublicProductDto>>> GetProductsAsync(string slug, string? categorySlug, string? search, int page = 1)
         {
             var found = await _context.FindPublicStoreAsync(slug);
             if (found is null)
                 return Response<List<PublicProductDto>>.Fail(NotFound);
 
-            var query = VisibleProducts(found);
+            var query = await _context.VisibleProductsAsync(found);
 
             if (!string.IsNullOrWhiteSpace(categorySlug))
                 query = query.Where(p => p.Category != null && p.Category.Slug == categorySlug);
@@ -86,10 +89,14 @@ namespace BackendSystemVitrio.Services.PublicService
                     (p.Description != null && EF.Functions.ILike(p.Description, term)));
             }
 
+            // Em páginas: a vitrine busca a próxima enquanto a anterior vier cheia. O desempate
+            // pelo id deixa a ordem fixa, então uma página não repete produto da outra.
             var products = await query
                 .OrderByDescending(p => p.IsFeatured)
                 .ThenByDescending(p => p.CreationDate)
-                .Take(500)
+                .ThenByDescending(p => p.Id)
+                .Skip((Math.Max(page, 1) - 1) * ProductsPageSize)
+                .Take(ProductsPageSize)
                 .Select(ToDtoExpression)
                 .ToListAsync();
 
@@ -102,7 +109,7 @@ namespace BackendSystemVitrio.Services.PublicService
             if (found is null)
                 return Response<PublicProductDto>.Fail(NotFound);
 
-            var product = await VisibleProducts(found)
+            var product = await (await _context.VisibleProductsAsync(found))
                 .Where(p => p.Slug == productSlug)
                 .Select(ToDtoExpression)
                 .FirstOrDefaultAsync();
@@ -111,12 +118,6 @@ namespace BackendSystemVitrio.Services.PublicService
                 ? Response<PublicProductDto>.Fail("Produto não encontrado.")
                 : Response<PublicProductDto>.Ok(product);
         }
-
-        // Produto aparece na vitrine se estiver ativo, não excluído, dentro do limite
-        // do plano do lojista e, caso tenha categoria, se ela também estiver ativa.
-        private IQueryable<Product> VisibleProducts(PublicStore found)
-            => _context.ProductsWithinPlan(found.Store.Id, found.Plan).Where(p =>
-                p.Category == null || (p.Category.IsActive && p.Category.DeletionDate == null));
 
         private static readonly Expression<Func<Product, PublicProductDto>> ToDtoExpression = p => new PublicProductDto
         {

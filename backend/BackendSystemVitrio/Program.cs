@@ -66,6 +66,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<NewOrderNotifier>();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
@@ -115,6 +116,15 @@ builder.Services.AddHttpClient<CloudinaryCleanup>(client =>
 });
 builder.Services.AddHostedService<CleanupService>();
 
+// Chave que assina os tokens de login. Sem ela, ou com uma chave conhecida, qualquer pessoa
+// montaria um token válido (até de Admin). Por isso a API nem sobe sem uma chave de verdade.
+// O HS512 exige pelo menos 64 bytes.
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 64)
+    throw new InvalidOperationException(
+        "Configure Jwt:Key com pelo menos 64 caracteres aleatórios: no desenvolvimento, " +
+        "\"dotnet user-secrets set Jwt:Key <chave>\"; em produção, a variável de ambiente Jwt__Key.");
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -130,8 +140,7 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         // Padrão é 5 min de tolerância — com access token de 15 min isso é muito.
         ClockSkew = TimeSpan.FromSeconds(30)
     };
@@ -176,7 +185,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    // Login e cadastro de cliente: até 10 tentativas por minuto por IP.
+    // Login, cadastros (lojista e cliente) e senha: até 10 tentativas por minuto por IP.
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",

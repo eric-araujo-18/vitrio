@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, CircleAlert, LoaderCircle, MapPin, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { unwrap } from "@/lib/api";
 import { createAddress, deleteAddress, getMyAddresses, updateAddress } from "@/lib/api_customer";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import {
   EMPTY_ADDRESS,
   addressLine1,
@@ -34,6 +35,7 @@ export default function AddressesDrawer({ onClose }: AddressesDrawerProps) {
   const [busyId, setBusyId] = useState<number | null>(null);
 
   useLockBodyScroll();
+  const backdrop = useBackdropDismiss(() => !saving && onClose());
 
   const load = useCallback(async () => {
     try {
@@ -116,12 +118,11 @@ export default function AddressesDrawer({ onClose }: AddressesDrawerProps) {
   const isForm = editing !== null;
 
   return (
-    <div className={`${storeOverlay} flex justify-end`} onClick={() => !saving && onClose()}>
+    <div className={`${storeOverlay} flex justify-end`} {...backdrop}>
       <aside
         role="dialog"
         aria-modal="true"
         aria-labelledby="addresses-title"
-        onClick={(e) => e.stopPropagation()}
         className="flex h-full w-full max-w-[440px] animate-drawer-in flex-col bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.12)]"
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">

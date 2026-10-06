@@ -20,7 +20,9 @@ namespace BackendSystemVitrio.Controllers
             _authService = authService;
         }
 
+        // Limitado por IP como o login: impede criar contas em série.
         [HttpPost("register")]
+        [EnableRateLimiting("auth")]
         public async Task<IActionResult> Register(RegisterDto dto)
         {
             var response = await _authService.RegisterAsync(dto);
@@ -70,11 +72,12 @@ namespace BackendSystemVitrio.Controllers
             var refreshToken = Request.Cookies[RefreshTokenCookieName];
             var result = await _authService.RefreshTokenAsync(refreshToken ?? "");
 
+            // Não apaga o cookie quando falha: com várias abas abertas, duas podem renovar ao
+            // mesmo tempo com o mesmo cookie. A primeira troca o token; a outra falha, e apagar o
+            // cookie aqui apagaria o novo, que a primeira acabou de receber (todas sairiam da
+            // conta). Um cookie inválido não faz mal: ele vence sozinho ou é trocado no login.
             if (!result.Status || result.Dados is null)
-            {
-                DeleteRefreshTokenCookie();
                 return Unauthorized(Response<string>.Fail(result.Mensagem ?? "Sessão expirada."));
-            }
 
             SetRefreshTokenCookie(result.Dados.RefreshToken);
 

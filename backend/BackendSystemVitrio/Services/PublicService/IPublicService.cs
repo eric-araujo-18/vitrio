@@ -8,7 +8,8 @@ namespace BackendSystemVitrio.Services.PublicService
     {
         Task<Response<PublicStoreDto>> GetStoreAsync(string slug);
         Task<Response<List<PublicCategoryDto>>> GetCategoriesAsync(string slug);
-        Task<Response<List<PublicProductDto>>> GetProductsAsync(string slug, string? categorySlug, string? search);
+        // Em páginas de PublicService.ProductsPageSize (page começa em 1).
+        Task<Response<List<PublicProductDto>>> GetProductsAsync(string slug, string? categorySlug, string? search, int page = 1);
         Task<Response<PublicProductDto>> GetProductAsync(string slug, string productSlug);
     }
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CreditCard, ImageOff, LoaderCircle, MapPin, MessageCircle, Package, X } from "lucide-react";
 import { addressLine1, addressLine2 } from "@/lib/address";
 import { getMyOrders, type CustomerOrder, type OrderStatus } from "@/lib/api_order";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { formatDateTime, formatPrice, formatTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, whatsappLink } from "@/lib/format";
 import { iconButton, storeOverlay, storeSecondaryButton, useLockBodyScroll } from "./Ui";
 
@@ -28,6 +29,7 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
   const [error, setError] = useState<string | null>(null);
 
   useLockBodyScroll();
+  const backdrop = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -50,12 +52,12 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
   }, [storeSlug]);
 
   return (
-    <div className={`${storeOverlay} flex justify-end`} onClick={onClose}>
+    <div className={`${storeOverlay} flex justify-end`} {...backdrop}>
       <aside
         role="dialog"
         aria-modal="true"
         aria-labelledby="my-orders-title"
-        onClick={(e) => e.stopPropagation()}
+
         className="flex h-full w-full max-w-[440px] animate-drawer-in flex-col bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.12)]"
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">

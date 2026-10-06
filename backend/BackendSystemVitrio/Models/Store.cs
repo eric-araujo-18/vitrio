@@ -28,6 +28,9 @@ namespace BackendSystemVitrio.Models
         // Permite "pausar" a loja (some da vitrine pública) sem apagar os dados
         public bool IsActive { get; set; } = true;
 
+        // Manda um e-mail para o dono a cada pedido novo (além do aviso no painel).
+        public bool NotifyNewOrdersByEmail { get; set; } = true;
+
         public DateTime CreationDate { get; set; } = DateTime.UtcNow;
         public DateTime? DeletionDate { get; set; } = null;
 

@@ -12,6 +12,10 @@ namespace BackendSystemVitrio.DTO
     {
         public required string Size { get; set; }
         public int StockQuantity { get; set; } = 0;
+
+        // Só na edição: o estoque deste tamanho que o formulário mostrava ao abrir (null = tamanho
+        // novo). Ver UpdateProductDto.OriginalStockQuantity.
+        public int? OriginalStockQuantity { get; set; }
     }
 
     public class ProductVariantResponseDto
@@ -65,6 +69,13 @@ namespace BackendSystemVitrio.DTO
         public decimal Price { get; set; }
         public decimal? PromotionalPrice { get; set; }
         public int StockQuantity { get; set; }
+
+        // Estoque que o formulário mostrava ao abrir. Enquanto o lojista edita, a vitrine pode
+        // vender (ou um cancelamento devolver): com este valor, o que muda é só a diferença que
+        // ele digitou, e o que foi vendido nesse meio-tempo continua descontado.
+        // null = o estoque enviado substitui o atual (comportamento antigo).
+        public int? OriginalStockQuantity { get; set; }
+
         public bool IsActive { get; set; }
         public bool IsFeatured { get; set; }
         public List<CreateProductImageDto>? Images { get; set; }

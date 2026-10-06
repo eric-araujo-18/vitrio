@@ -3,6 +3,7 @@ using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Enum;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.StorePaymentService;
 using BackendSystemVitrio.Wrappers;
@@ -49,6 +50,7 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
         private readonly AppDbContext _context;
         private readonly IMercadoPagoMarketplaceClient _mercadoPago;
         private readonly IStorePaymentService _storePayments;
+        private readonly NewOrderNotifier _notifier;
         private readonly MercadoPagoOptions _options;
         private readonly IConfiguration _configuration;
         private readonly ILogger<OrderPaymentService> _logger;
@@ -57,6 +59,7 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
             AppDbContext context,
             IMercadoPagoMarketplaceClient mercadoPago,
             IStorePaymentService storePayments,
+            NewOrderNotifier notifier,
             IOptions<MercadoPagoOptions> options,
             IConfiguration configuration,
             ILogger<OrderPaymentService> logger)
@@ -64,6 +67,7 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
             _context = context;
             _mercadoPago = mercadoPago;
             _storePayments = storePayments;
+            _notifier = notifier;
             _options = options.Value;
             _configuration = configuration;
             _logger = logger;
@@ -170,19 +174,86 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
             return true;
         }
 
-        public async Task<bool> RefundAsync(Order order)
+        public async Task<bool?> CancelAwaitingAsync(int orderId, int storeId)
+        {
+            // Sem conferir, um Pix pago há segundos (aviso ainda a caminho) viraria um pedido
+            // cancelado e pago. Se o Mercado Pago não responder, não cancela agora.
+            try
+            {
+                await SyncAsync(orderId, storeId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falha ao conferir o pagamento do pedido {OrderId} antes de cancelar", orderId);
+                _context.ChangeTracker.Clear();
+                return null;
+            }
+
+            return await CancelUnpaidAsync(orderId);
+        }
+
+        public async Task<Response<OrderPaymentInfoDto>> CancelByCustomerAsync(string storeSlug, string code)
+        {
+            try
+            {
+                code = code.Trim().ToUpperInvariant();
+                var order = await FindByCodeAsync(storeSlug, code);
+                if (order is null)
+                    return Response<OrderPaymentInfoDto>.Fail("Pedido não encontrado.");
+
+                if (order.Status == OrderStatus.AwaitingPayment)
+                {
+                    var canceled = await CancelAwaitingAsync(order.Id, order.StoreId);
+                    if (canceled is null)
+                        return Response<OrderPaymentInfoDto>.Fail("Não foi possível cancelar agora. Tente de novo em instantes.");
+                    if (canceled == true)
+                        _logger.LogInformation("Pedido {OrderId} cancelado pelo cliente antes de pagar", order.Id);
+                }
+
+                // Devolve a situação atual: cancelado, ou pago (se o pagamento chegou antes).
+                return await GetPublicStatusAsync(storeSlug, code);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao cancelar o pedido {Code} pela vitrine", code);
+                return Response<OrderPaymentInfoDto>.Fail("Não foi possível cancelar agora. Tente de novo em instantes.");
+            }
+        }
+
+        public async Task<RefundResult> RefundAsync(Order order)
         {
             if (order.GatewayPaymentId is null)
-                return false;
+                return RefundResult.Failed;
 
             var token = await _storePayments.GetAccessTokenAsync(order.StoreId);
             if (token is null)
             {
                 _logger.LogWarning("Pedido {OrderId}: sem conta do Mercado Pago conectada para estornar", order.Id);
-                return false;
+                return RefundResult.Manual;
             }
 
-            return await TryRefundAsync(token, order.GatewayPaymentId);
+            try
+            {
+                await _mercadoPago.RefundPaymentAsync(token, order.GatewayPaymentId, idempotencyKey: $"vitrio-refund-{order.GatewayPaymentId}");
+                return RefundResult.Refunded;
+            }
+            catch (MercadoPagoException ex) when (ex.StatusCode is 401 or 403 or 404)
+            {
+                // O token não vale mais (acesso revogado no Mercado Pago) ou a loja conectou outra
+                // conta, que não enxerga este pagamento: só dá para devolver pelo Mercado Pago.
+                _logger.LogWarning(ex, "Pedido {OrderId}: a conta conectada não consegue estornar o pagamento {PaymentId}",
+                    order.Id, order.GatewayPaymentId);
+                return RefundResult.Manual;
+            }
+            catch (MercadoPagoException ex)
+            {
+                // Já estornado (pelo painel do Mercado Pago, por exemplo) conta como feito.
+                if (await IsRefundedAsync(token, order.GatewayPaymentId))
+                    return RefundResult.Refunded;
+
+                _logger.LogError(ex, "Não foi possível estornar o pagamento {PaymentId} do pedido {OrderId}", order.GatewayPaymentId, order.Id);
+                return RefundResult.Failed;
+            }
         }
 
         public async Task HandleNotificationAsync(int storeId, string paymentId)
@@ -394,6 +465,8 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
                     if (affected == 1)
                     {
                         _logger.LogInformation("Pedido {OrderId} pago (pagamento {PaymentId})", orderId, paymentId);
+                        // Só agora é um pedido de verdade: avisa o lojista (só um dos caminhos chega aqui).
+                        await _notifier.NotifyAsync(orderId);
                         return;
                     }
 
@@ -455,15 +528,23 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
             catch (MercadoPagoException ex)
             {
                 // Já estornado (pelo painel do Mercado Pago, por exemplo) conta como feito.
-                try
-                {
-                    var current = await _mercadoPago.GetPaymentAsync(token, paymentId);
-                    if (current.Status is "refunded" or "charged_back")
-                        return true;
-                }
-                catch (MercadoPagoException) { }
+                if (await IsRefundedAsync(token, paymentId))
+                    return true;
 
                 _logger.LogError(ex, "Não foi possível estornar o pagamento {PaymentId}", paymentId);
+                return false;
+            }
+        }
+
+        private async Task<bool> IsRefundedAsync(string token, string paymentId)
+        {
+            try
+            {
+                var current = await _mercadoPago.GetPaymentAsync(token, paymentId);
+                return current.Status is "refunded" or "charged_back";
+            }
+            catch (MercadoPagoException)
+            {
                 return false;
             }
         }

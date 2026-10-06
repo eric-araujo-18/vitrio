@@ -5,6 +5,7 @@ import { CircleAlert, ImageOff, ShoppingBag, X } from "lucide-react";
 import type { PublicProduct } from "@/lib/api_public";
 import { cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { ColorDot, QuantityStepper, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
 
 interface ProductModalProps {
@@ -66,6 +67,7 @@ export default function ProductModal({
   const image = product.images[imageIndex];
 
   useLockBodyScroll();
+  const backdrop = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -86,12 +88,11 @@ export default function ProductModal({
   }
 
   return (
-    <div className={`${storeOverlay} flex items-end justify-center sm:items-center sm:p-4`} onClick={onClose}>
+    <div className={`${storeOverlay} flex items-end justify-center sm:items-center sm:p-4`} {...backdrop}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-modal-title"
-        onClick={(e) => e.stopPropagation()}
         className="relative grid max-h-[92vh] w-full max-w-[880px] animate-modal-in grid-cols-1 gap-6 overflow-y-auto rounded-t-2xl bg-white p-4 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:rounded-2xl sm:p-6 min-[721px]:grid-cols-2"
       >
         <button

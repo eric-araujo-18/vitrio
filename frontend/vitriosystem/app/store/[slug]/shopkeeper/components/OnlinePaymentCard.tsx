@@ -189,7 +189,7 @@ export default function OnlinePaymentCard({ storeId }: { storeId: number }) {
 
             {confirmingDisconnect ? (
               <InlineConfirm
-                message="A vitrine deixa de oferecer “pagar agora”. Pedidos já pagos continuam pagos, mas cancelar um deles não estorna mais pelo Vitrio."
+                message="A vitrine deixa de oferecer “pagar agora”. Pedidos já pagos continuam pagos, mas, se você cancelar um deles, o Vitrio não consegue mais estornar: você devolve o valor pelo app do Mercado Pago."
                 confirmLabel="Desconectar"
                 onConfirm={handleDisconnect}
                 onCancel={() => setConfirmingDisconnect(false)}

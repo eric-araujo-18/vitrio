@@ -5,6 +5,7 @@ import {
   Check,
   CircleAlert,
   LoaderCircle,
+  Lock,
   Mail,
   Phone,
   Save,
@@ -36,6 +37,11 @@ export default function EditProfileForm({
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
+  // Trocar o e-mail pede a senha atual (é pelo e-mail que a senha é redefinida).
+  const [savedEmail, setSavedEmail] = useState(initialData.email);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | undefined>();
+  const emailChanged = !!form.email.trim() && form.email.trim().toLowerCase() !== savedEmail.toLowerCase();
 
   // Atualiza um campo, limpa o erro dele e esconde a mensagem anterior
   // (evita "Perfil atualizado" aparecendo enquanto o usuário já editou de novo).
@@ -56,8 +62,10 @@ export default function EditProfileForm({
     if (form.phone.trim() && !isValidPhone(form.phone.trim())) {
       next.phone = "Informe um telefone válido. Ex: (00) 00000-0000.";
     }
+    const missingPassword = emailChanged && !currentPassword;
+    setPasswordError(missingPassword ? "Informe sua senha atual para trocar o e-mail." : undefined);
     setErrors(next);
-    return Object.keys(next).length === 0;
+    return Object.keys(next).length === 0 && !missingPassword;
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -73,12 +81,15 @@ export default function EditProfileForm({
         name: form.name.trim() || "",
         email: form.email.trim() || "",
         phone: form.phone.trim() || "",
+        currentPassword: emailChanged ? currentPassword : undefined,
       });
 
       if (!res.status) throw new Error(res.mensagem ?? "Erro ao atualizar perfil.");
 
       setStatus("success");
       setMessage(res.mensagem ?? "Perfil atualizado com sucesso.");
+      setSavedEmail(res.dados?.email ?? form.email.trim());
+      setCurrentPassword("");
       onUpdated?.(form);
     } catch (err) {
       setStatus("error");
@@ -121,6 +132,7 @@ export default function EditProfileForm({
           label="Nome"
           icon={User}
           autoComplete="name"
+          maxLength={100}
           value={form.name}
           onChange={(e) => updateField("name", e.target.value)}
           placeholder="Seu nome completo"
@@ -140,6 +152,24 @@ export default function EditProfileForm({
           error={errors.email}
           disabled={isLoading}
         />
+
+        {emailChanged && (
+          <Field
+            id="currentPassword"
+            label="Senha atual (para trocar o e-mail)"
+            icon={Lock}
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => {
+              setCurrentPassword(e.target.value);
+              setPasswordError(undefined);
+            }}
+            placeholder="Sua senha"
+            error={passwordError}
+            disabled={isLoading}
+          />
+        )}
 
         <Field
           id="phone"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import {
   Building2,
   CircleAlert,
@@ -111,6 +112,9 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
     if (!busy) onClose();
   }
 
+  // Fecha clicando fora, mas não quando o mouse só termina fora (ex.: selecionando o texto de um campo).
+  const backdrop = useBackdropDismiss(handleClose);
+
   // Fecha com Esc e trava o scroll da página enquanto o modal está aberto.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -193,14 +197,13 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
   return (
     <div
       className="fixed inset-0 z-[1000] flex animate-overlay-in items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
-      onClick={handleClose}
+      {...backdrop}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-store-title"
         className="max-h-[90vh] w-full max-w-[520px] animate-modal-in overflow-y-auto rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:p-8 md:max-w-[880px]"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho */}
         <div className="mb-2 flex items-start justify-between gap-4">

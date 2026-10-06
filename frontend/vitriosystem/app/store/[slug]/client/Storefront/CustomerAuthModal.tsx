@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { CircleAlert, LoaderCircle, X } from "lucide-react";
 import { login, registerClient } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import { formatPhone, isValidPhone, isvalidEmail } from "@/lib/validators";
 import { iconButton, storeInput, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
 
@@ -43,6 +44,8 @@ export default function CustomerAuthModal({
   const [error, setError] = useState<string | null>(null);
 
   useLockBodyScroll();
+  // Fecha clicando fora, mas não quando o mouse só termina fora (ex.: selecionando o texto de um campo).
+  const backdrop = useBackdropDismiss(() => !sending && onClose());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !sending && onClose();
@@ -106,20 +109,16 @@ export default function CustomerAuthModal({
   const isRegister = mode === "register";
 
   return (
-    <div
-      className={`${storeOverlay} flex items-end justify-center sm:items-center sm:p-4`}
-      onClick={() => !sending && onClose()}
-    >
+    <div className={`${storeOverlay} flex items-end justify-center sm:items-center sm:p-4`} {...backdrop}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="customer-auth-title"
-        onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[92vh] w-full max-w-[420px] animate-modal-in flex-col gap-5 overflow-y-auto rounded-t-2xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:rounded-2xl sm:p-6"
+        className="relative flex max-h-[94vh] w-full max-w-[520px] animate-modal-in flex-col gap-6 overflow-y-auto rounded-t-2xl bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] sm:rounded-2xl sm:p-8"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 id="customer-auth-title" className="text-headline-sm text-slate-900">
+            <h2 id="customer-auth-title" className="text-headline-md text-slate-900">
               {isRegister ? "Criar conta" : "Entrar"}
             </h2>
             <p className="mt-1 text-body-md text-slate-500">
@@ -148,7 +147,7 @@ export default function CustomerAuthModal({
               aria-selected={mode === value}
               onClick={() => switchMode(value)}
               disabled={sending}
-              className={`h-9 rounded-md text-label-md font-semibold transition-colors ${
+              className={`h-10 rounded-md text-label-md font-semibold transition-colors ${
                 mode === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
               }`}
             >
@@ -157,7 +156,7 @@ export default function CustomerAuthModal({
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
           {isRegister && (
             <Field id="ca-name" label="Nome">
               <input
@@ -167,7 +166,7 @@ export default function CustomerAuthModal({
                 autoComplete="name"
                 maxLength={100}
                 disabled={sending}
-                className={`${storeInput} h-11`}
+                className={`${storeInput} h-12`}
               />
             </Field>
           )}
@@ -181,7 +180,7 @@ export default function CustomerAuthModal({
               autoComplete="email"
               inputMode="email"
               disabled={sending}
-              className={`${storeInput} h-11`}
+              className={`${storeInput} h-12`}
             />
           </Field>
 
@@ -197,7 +196,7 @@ export default function CustomerAuthModal({
                 autoComplete="tel"
                 maxLength={15}
                 disabled={sending}
-                className={`${storeInput} h-11`}
+                className={`${storeInput} h-12`}
               />
             </Field>
           )}
@@ -210,7 +209,7 @@ export default function CustomerAuthModal({
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={isRegister ? "new-password" : "current-password"}
               disabled={sending}
-              className={`${storeInput} h-11`}
+              className={`${storeInput} h-12`}
             />
           </Field>
 

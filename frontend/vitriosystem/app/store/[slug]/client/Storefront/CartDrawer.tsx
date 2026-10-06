@@ -29,9 +29,11 @@ import {
   type AddressFormValues,
   type SavedAddress,
 } from "@/lib/address";
+import { savePendingPayment } from "@/lib/pending_payment";
 import AddressFields from "./AddressFields";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { formatPhone, isValidPhone, isvalidEmail } from "@/lib/validators";
+import { useBackdropDismiss } from "@/lib/backdrop";
 import {
   QuantityStepper,
   iconButton,
@@ -45,8 +47,11 @@ import {
 interface CartDrawerProps {
   store: PublicStore;
   onClose: () => void;
-  /** Chamado depois que o pedido é criado, para a página recarregar o estoque. */
-  onOrderPlaced?: () => void;
+  /**
+   * O estoque mudou ou pode ter mudado (pedido criado, ou recusado por falta de estoque): a página
+   * recarrega os produtos, e o carrinho se acerta com eles.
+   */
+  onStockChanged?: () => void;
   /** Abre o "Entrar" da vitrine (conta é opcional). */
   onRequestLogin?: () => void;
   /** Abre "Meus pedidos" (só para quem está logado). */
@@ -61,8 +66,8 @@ const STEP_TITLES: Record<Step, string> = {
   done: "Pedido enviado",
 };
 
-export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLogin, onShowOrders }: CartDrawerProps) {
-  const { items, totalPrice, setQuantity, removeItem, clear } = useCart();
+export default function CartDrawer({ store, onClose, onStockChanged, onRequestLogin, onShowOrders }: CartDrawerProps) {
+  const { items, totalPrice, setQuantity, removeItem, clear, notice, dismissNotice } = useCart();
   const { user } = useAuth();
 
   const [step, setStep] = useState<Step>("cart");
@@ -88,6 +93,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
   const [created, setCreated] = useState<OrderCreated | null>(null);
 
   useLockBodyScroll();
+  const backdrop = useBackdropDismiss(() => !sending && onClose());
 
   // Quando o cliente entra, sai ou troca de conta: descarta os endereços da conta anterior e
   // preenche o checkout com os dados da conta (só os campos ainda vazios, pra não apagar o
@@ -179,8 +185,13 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
           })),
         })
       );
+      if (result.checkoutUrl) {
+        // A vitrine lembra o pedido (e os itens): se o cliente voltar sem pagar, ela oferece
+        // pagar ou cancelar, e os itens voltam para o carrinho se o pedido for cancelado.
+        savePendingPayment(store.slug, { code: result.code, items });
+      }
       clear();
-      onOrderPlaced?.();
+      onStockChanged?.();
       if (result.checkoutUrl) {
         // Paga no Mercado Pago; ao terminar, volta para a vitrine com ?pedido=CODIGO.
         setRedirecting(true);
@@ -191,6 +202,9 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
       setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar o pedido.");
+      // Pode ter sido estoque ou produto que saiu da vitrine: recarrega e o carrinho se acerta
+      // (o aviso diz o que mudou).
+      onStockChanged?.();
     } finally {
       setSending(false);
     }
@@ -199,12 +213,11 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
   const totalCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
-    <div className={`${storeOverlay} flex justify-end`} onClick={() => !sending && onClose()}>
+    <div className={`${storeOverlay} flex justify-end`} {...backdrop}>
       <aside
         role="dialog"
         aria-modal="true"
         aria-labelledby="cart-drawer-title"
-        onClick={(e) => e.stopPropagation()}
         className="flex h-full w-full max-w-[420px] animate-drawer-in flex-col bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.12)]"
       >
         {/* Cabeçalho */}
@@ -275,6 +288,7 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
         ) : items.length === 0 ? (
           /* Carrinho vazio */
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            {notice.length > 0 && <CartNotice notice={notice} onDismiss={dismissNotice} />}
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400">
               <ShoppingBag size={30} aria-hidden="true" />
             </div>
@@ -286,6 +300,12 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-5 py-2">
+              {notice.length > 0 && (
+                <div className="pt-2 pb-1">
+                  <CartNotice notice={notice} onDismiss={dismissNotice} />
+                </div>
+              )}
+
               {/* Itens */}
               {step === "cart" &&
                 items.map((item) => (
@@ -564,6 +584,34 @@ export default function CartDrawer({ store, onClose, onOrderPlaced, onRequestLog
           </>
         )}
       </aside>
+    </div>
+  );
+}
+
+// O que mudou no carrinho ao acertar com a loja (esgotou, saiu da vitrine, preço novo...).
+function CartNotice({ notice, onDismiss }: { notice: string[]; onDismiss: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex w-full items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-left text-body-sm text-amber-900"
+    >
+      <CircleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">Atualizamos seu carrinho:</p>
+        <ul className="mt-1 flex flex-col gap-0.5">
+          {notice.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Fechar aviso"
+        className="-m-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-amber-800 hover:bg-amber-100"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
     </div>
   );
 }

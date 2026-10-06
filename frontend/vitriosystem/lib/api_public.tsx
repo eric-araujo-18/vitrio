@@ -91,12 +91,46 @@ export function getPublicCategories(slug: string) {
   return request<PublicCategory[]>(`${base(slug)}/categories`, "GET");
 }
 
-export function getPublicProducts(slug: string, filters?: { category?: string; search?: string }) {
+/** Produtos por página na vitrine (PublicService.ProductsPageSize no backend). */
+export const PRODUCTS_PAGE_SIZE = 200;
+
+/** Uma página de produtos (a partir de 1), na ordem da vitrine: destaques e depois os mais novos. */
+export function getPublicProducts(slug: string, filters?: { category?: string; search?: string; page?: number }) {
   const params = new URLSearchParams();
   if (filters?.category) params.set("category", filters.category);
   if (filters?.search) params.set("search", filters.search);
+  if (filters?.page && filters.page > 1) params.set("page", String(filters.page));
   const query = params.toString();
   return request<PublicProduct[]>(`${base(slug)}/products${query ? `?${query}` : ""}`, "GET");
+}
+
+/**
+ * Continua a lista a partir da primeira página: busca as próximas enquanto vierem cheias.
+ * onPage recebe a lista acumulada a cada página. Lança se uma página falhar.
+ */
+export async function getRemainingPublicProducts(
+  slug: string,
+  firstPage: PublicProduct[],
+  onPage?: (soFar: PublicProduct[]) => void
+): Promise<PublicProduct[]> {
+  let all = firstPage;
+  for (let page = 2, last = firstPage.length; last === PRODUCTS_PAGE_SIZE; page++) {
+    const res = await getPublicProducts(slug, { page });
+    if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Erro ao carregar os produtos.");
+    // Um produto criado entre duas páginas empurra a lista: o id evita repetir.
+    const seen = new Set(all.map((p) => p.id));
+    all = [...all, ...res.dados.filter((p) => !seen.has(p.id))];
+    last = res.dados.length;
+    onPage?.(all);
+  }
+  return all;
+}
+
+/** Todos os produtos visíveis da loja, página por página. */
+export async function getAllPublicProducts(slug: string): Promise<PublicProduct[]> {
+  const first = await getPublicProducts(slug);
+  if (!first.status || !first.dados) throw new Error(first.mensagem ?? "Erro ao carregar os produtos.");
+  return getRemainingPublicProducts(slug, first.dados);
 }
 
 export function getPublicProduct(slug: string, productSlug: string) {
@@ -106,6 +140,14 @@ export function getPublicProduct(slug: string, productSlug: string) {
 /** Confere o pagamento online do pedido (a API consulta o Mercado Pago se ainda estiver esperando). */
 export function getOrderPayment(slug: string, code: string) {
   return request<OrderPaymentInfo>(`${base(slug)}/orders/${encodeURIComponent(code)}/payment`, "GET");
+}
+
+/**
+ * O cliente desiste de um pedido que ainda espera pagamento (o estoque volta na hora). Devolve a
+ * situação final: cancelado, ou pago, se o pagamento chegou antes.
+ */
+export function cancelUnpaidOrder(slug: string, code: string) {
+  return request<OrderPaymentInfo>(`${base(slug)}/orders/${encodeURIComponent(code)}/cancel`, "POST");
 }
 
 export function createPublicOrder(slug: string, payload: CreateOrderPayload) {

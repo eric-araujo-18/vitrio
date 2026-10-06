@@ -11,9 +11,12 @@ namespace BackendSystemVitrio.Data
     {
         // Devolve ao estoque o que um pedido reservou (pedido cancelado ou pagamento expirado).
         // Chame dentro da mesma transação que muda o status do pedido.
+        // A ordem (produto, depois tamanho; tamanho antes do total do produto) é a mesma da
+        // criação do pedido e da edição do produto: todos travam as linhas na mesma ordem, e
+        // duas transações ao mesmo tempo não ficam esperando uma pela outra (deadlock).
         public static async Task RestoreStockAsync(this AppDbContext context, IEnumerable<OrderItem> items)
         {
-            foreach (var item in items.Where(i => i.ProductId.HasValue))
+            foreach (var item in items.Where(i => i.ProductId.HasValue).OrderBy(i => i.ProductId).ThenBy(i => i.VariantId))
             {
                 // Se o tamanho ainda existe, devolve pra ele e soma no total do produto.
                 // Se o lojista apagou o tamanho, não há onde devolver: o total do
@@ -91,6 +94,47 @@ namespace BackendSystemVitrio.Data
                 .Select(p => p.Id);
 
             return active.Where(p => allowedIds.Contains(p.Id));
+        }
+
+        // Produtos que aparecem na vitrine e podem ser pedidos: ativos, dentro do limite do plano
+        // e fora de categorias escondidas. A vitrine e o checkout usam a mesma regra, para não
+        // aceitar pedido de um produto que o cliente nem consegue ver.
+        public static async Task<IQueryable<Product>> VisibleProductsAsync(this AppDbContext context, PublicStore found)
+        {
+            var hidden = await context.HiddenCategoryIdsAsync(found.Store.Id);
+            var products = context.ProductsWithinPlan(found.Store.Id, found.Plan);
+            return hidden.Count == 0
+                ? products
+                : products.Where(p => p.CategoryId == null || !hidden.Contains(p.CategoryId.Value));
+        }
+
+        // Categorias que escondem os produtos da vitrine: desativadas ou excluídas, ou dentro de
+        // uma categoria (pai, avó...) desativada. A árvore de uma loja é pequena, então é montada
+        // na memória.
+        public static async Task<HashSet<int>> HiddenCategoryIdsAsync(this AppDbContext context, int storeId)
+        {
+            var categories = await context.Category.AsNoTracking()
+                .Where(c => c.StoreId == storeId)
+                .Select(c => new { c.Id, c.ParentCategoryId, Hidden = !c.IsActive || c.DeletionDate != null })
+                .ToDictionaryAsync(c => c.Id);
+
+            var hidden = new HashSet<int>();
+            foreach (var category in categories.Values)
+            {
+                var current = category;
+                for (var depth = 0; current is not null && depth < 50; depth++) // 50: proteção contra ciclo
+                {
+                    if (current.Hidden)
+                    {
+                        hidden.Add(category.Id);
+                        break;
+                    }
+                    current = current.ParentCategoryId is int parentId && categories.TryGetValue(parentId, out var parent)
+                        ? parent
+                        : null;
+                }
+            }
+            return hidden;
         }
 
         // Loja pública (vitrine): precisa estar ativa, não excluída e dentro do limite

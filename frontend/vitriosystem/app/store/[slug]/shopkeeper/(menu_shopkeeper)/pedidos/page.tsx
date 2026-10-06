@@ -14,7 +14,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { unwrap } from "@/lib/api";
-import { getOrdersByStore, updateOrderStatus, type Order, type OrderStatus } from "@/lib/api_order";
+import {
+  ORDERS_PAGE_SIZE,
+  getOrdersByStore,
+  updateOrderStatus,
+  type Order,
+  type OrderStatus,
+} from "@/lib/api_order";
 import {
   formatDateTime,
   formatPrice,
@@ -33,6 +39,7 @@ import {
   LoadingState,
   PageHeader,
   StatusBadge,
+  WarningBox,
   btnDanger,
   btnIcon,
   btnPrimary,
@@ -50,6 +57,9 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
   const [error, setError] = useState<string | null>(null);
+  // A lista vem em páginas (do mais novo para o mais antigo); "Carregar mais" busca a próxima.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Cada combinação loja + filtro + "atualizar" é uma carga; está carregando até ela chegar.
   const [reloadCount, setReloadCount] = useState(0);
@@ -62,6 +72,8 @@ export default function OrdersPage() {
   // Substituem confirm()/alert(): confirmação e erro aparecem dentro do pedido aberto.
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [rowError, setRowError] = useState<{ id: number; message: string } | null>(null);
+  // Aviso depois de cancelar um pedido pago (estornado, ou o lojista precisa devolver o valor).
+  const [rowNotice, setRowNotice] = useState<{ id: number; message: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -69,6 +81,7 @@ export default function OrdersPage() {
       .then((data) => {
         if (!active) return;
         setOrders(data);
+        setHasMore(data.length === ORDERS_PAGE_SIZE);
         setError(null);
       })
       .catch((err) => active && setError(err instanceof Error ? err.message : "Erro ao carregar pedidos."))
@@ -78,23 +91,45 @@ export default function OrdersPage() {
     };
   }, [store.id, filter, loadKey]);
 
+  async function loadMore() {
+    const oldest = orders[orders.length - 1];
+    if (!oldest) return;
+    setLoadingMore(true);
+    try {
+      const data = await unwrap(getOrdersByStore(store.id, filter === "all" ? undefined : filter, oldest.id));
+      setOrders((prev) => [...prev, ...data.filter((o) => !prev.some((p) => p.id === o.id))]);
+      setHasMore(data.length === ORDERS_PAGE_SIZE);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   function toggleExpanded(id: number) {
     setExpanded((cur) => (cur === id ? null : id));
     setConfirmCancelId(null);
     setRowError(null);
+    setRowNotice(null);
   }
 
   async function changeStatus(order: Order, status: OrderStatus) {
     setUpdatingId(order.id);
     setRowError(null);
+    setRowNotice(null);
     try {
-      const updated = await unwrap(updateOrderStatus(order.id, status));
+      const res = await updateOrderStatus(order.id, status);
+      if (!res.status || !res.dados) throw new Error(res.mensagem ?? "Erro ao atualizar pedido.");
+      const updated = res.dados;
       setOrders((prev) =>
         filter === "all" || updated.status === filter
           ? prev.map((o) => (o.id === updated.id ? updated : o))
           : prev.filter((o) => o.id !== updated.id)
       );
       setConfirmCancelId(null);
+      // Cancelou um pedido pago: diz se o valor voltou sozinho ou se o lojista precisa devolver.
+      if (status === "Canceled" && order.paymentStatus === "Approved" && res.mensagem)
+        setRowNotice({ id: order.id, message: res.mensagem });
       refreshPendingOrders(); // o contador da sidebar muda quando um pendente é confirmado/cancelado
     } catch (err) {
       setRowError({
@@ -294,13 +329,16 @@ export default function OrdersPage() {
                                 <CreditCard size={16} aria-hidden="true" className="shrink-0 text-outline" />
                                 {order.status === "AwaitingPayment"
                                   ? "Esperando o cliente pagar no Mercado Pago. Se não for pago no prazo, o pedido é cancelado sozinho e o estoque volta."
-                                  : order.paymentStatus === "Approved"
-                                    ? `Pago pelo Mercado Pago${order.paidAt ? ` em ${formatDateTime(order.paidAt)}` : ""}. O valor está na sua conta.`
-                                    : PAYMENT_STATUS_LABELS[order.paymentStatus]}
+                                  : order.paymentStatus === "Approved" && order.status === "Canceled"
+                                    ? "Pedido cancelado, mas o pagamento não foi estornado pelo Vitrio (a conta do Mercado Pago não alcançava mais o pagamento). Devolva o valor ao cliente pelo app do Mercado Pago."
+                                    : order.paymentStatus === "Approved"
+                                      ? `Pago pelo Mercado Pago${order.paidAt ? ` em ${formatDateTime(order.paidAt)}` : ""}. O valor está na sua conta.`
+                                      : PAYMENT_STATUS_LABELS[order.paymentStatus]}
                               </p>
                             )}
 
                             {rowError?.id === order.id && <ErrorBox>{rowError.message}</ErrorBox>}
+                            {rowNotice?.id === order.id && <WarningBox>{rowNotice.message}</WarningBox>}
 
                             {/* Ações */}
                             {confirmCancelId === order.id ? (
@@ -309,7 +347,7 @@ export default function OrdersPage() {
                                   <>
                                     Cancelar o pedido <strong>#{order.code}</strong>? Os itens voltam para o estoque.
                                     {order.paymentStatus === "Approved" &&
-                                      " O valor pago é estornado ao cliente pelo Mercado Pago."}
+                                      " O valor pago volta para o cliente pelo Mercado Pago. Se a sua conta do Mercado Pago não estiver mais conectada à loja, você precisa devolver pelo app do Mercado Pago."}
                                   </>
                                 }
                                 confirmLabel="Cancelar pedido"
@@ -370,6 +408,15 @@ export default function OrdersPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button type="button" onClick={loadMore} disabled={loadingMore} className={btnSecondary}>
+            {loadingMore && <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />}
+            Carregar pedidos mais antigos
+          </button>
         </div>
       )}
     </>

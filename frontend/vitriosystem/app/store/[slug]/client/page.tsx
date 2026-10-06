@@ -22,9 +22,11 @@ import {
   Store as StoreIcon,
 } from "lucide-react";
 import {
+  getAllPublicProducts,
   getPublicCategories,
   getPublicProducts,
   getPublicStore,
+  getRemainingPublicProducts,
   type PublicCategory,
   type PublicProduct,
   type PublicStore,
@@ -38,6 +40,7 @@ import CustomerAuthModal from "./Storefront/CustomerAuthModal";
 import MyOrdersDrawer from "./Storefront/MyOrdersDrawer";
 import AddressesDrawer from "./Storefront/AddressesDrawer";
 import PaymentReturnModal from "./Storefront/PaymentReturnModal";
+import PendingPaymentBanner from "./Storefront/PendingPaymentBanner";
 import { ColorDot } from "./Storefront/Ui";
 
 /*
@@ -83,12 +86,17 @@ function Storefront({ slug }: { slug: string }) {
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [addressesOpen, setAddressesOpen] = useState(false);
 
-  // Carrega loja + categorias + produtos uma vez; filtros são feitos no cliente
-  // (vitrines pequenas/médias — o backend limita a 500 produtos).
+  // Lista completa carregada (todas as páginas): só então o carrinho é comparado com ela, senão
+  // um produto de uma página que ainda não chegou pareceria ter saído da vitrine.
+  const [catalogComplete, setCatalogComplete] = useState(false);
+  const { syncWithCatalog } = useCart();
+
+  // Carrega loja + categorias + produtos; filtros são feitos no cliente. Os produtos vêm em
+  // páginas: a primeira já mostra a vitrine e as outras chegam em segundo plano.
   useEffect(() => {
     let active = true;
     Promise.all([getPublicStore(slug), getPublicCategories(slug), getPublicProducts(slug)])
-      .then(([s, c, p]) => {
+      .then(async ([s, c, p]) => {
         if (!active) return;
         if (!s.status || !s.dados) {
           setStatus("notfound");
@@ -99,8 +107,14 @@ function Storefront({ slug }: { slug: string }) {
         setProducts(p.dados ?? []);
         setStatus("ready");
         document.title = s.dados.name;
+
+        const all = await getRemainingPublicProducts(slug, p.dados ?? [], (soFar) => active && setProducts(soFar));
+        if (!active) return;
+        setProducts(all);
+        setCatalogComplete(true);
       })
-      .catch(() => active && setStatus("notfound"));
+      // Falha depois de a loja aparecer (uma página do meio): fica com o que já chegou.
+      .catch(() => active && setStatus((current) => (current === "ready" ? current : "notfound")));
     return () => {
       active = false;
     };
@@ -109,12 +123,17 @@ function Storefront({ slug }: { slug: string }) {
   // Busca os produtos de novo para pegar o estoque atualizado depois de um pedido
   const reloadProducts = useCallback(async () => {
     try {
-      const p = await getPublicProducts(slug);
-      if (p.dados) setProducts(p.dados);
+      setProducts(await getAllPublicProducts(slug));
+      setCatalogComplete(true);
     } catch {
       // Se falhar, mantém a lista atual; o backend ainda valida o estoque no pedido
     }
   }, [slug]);
+
+  // Carrinho salvo de outra visita: preço, estoque e produtos podem ter mudado.
+  useEffect(() => {
+    if (catalogComplete) syncWithCatalog(products);
+  }, [catalogComplete, products, syncWithCatalog]);
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -264,6 +283,11 @@ function Storefront({ slug }: { slug: string }) {
 
       {/* CONTEÚDO */}
       <main className={`${CONTAINER} flex-1 pt-7 pb-12`}>
+        {/* Pedido que o cliente foi pagar no Mercado Pago e ainda não pagou */}
+        <Suspense fallback={null}>
+          <PendingPaymentBanner slug={store.slug} onStockChanged={reloadProducts} />
+        </Suspense>
+
         {showFeatured && (
           <section className="mb-10">
             <h2 className="mb-4 flex items-center gap-2 text-headline-sm text-slate-900">
@@ -359,7 +383,7 @@ function Storefront({ slug }: { slug: string }) {
         <CartDrawer
           store={store}
           onClose={() => setCartOpen(false)}
-          onOrderPlaced={reloadProducts}
+          onStockChanged={reloadProducts}
           onRequestLogin={() => setAuthOpen(true)}
           onShowOrders={() => {
             setCartOpen(false);
