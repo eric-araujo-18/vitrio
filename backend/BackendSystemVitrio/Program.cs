@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using BackendSystemVitrio.Data;
+using BackendSystemVitrio.Helpers;
 using BackendSystemVitrio.Middlewares;
 using BackendSystemVitrio.Services.AuthService;
 using BackendSystemVitrio.Services.CategoryService;
@@ -25,6 +26,29 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ===== Configuração obrigatória =====
+// Fora do desenvolvimento, a API não sobe com configuração que quebraria em silêncio (links de
+// e-mail para localhost, e-mail de teste do Mercado Pago, remetente que não entrega...): a
+// mensagem lista tudo o que falta (ver ProductionConfigValidator). No desenvolvimento, os valores
+// padrão ficam no appsettings.Development.json e os segredos nos user-secrets.
+if (!builder.Environment.IsDevelopment())
+{
+    var problems = ProductionConfigValidator.Validate(builder.Configuration);
+    if (problems.Count > 0)
+        throw new InvalidOperationException(
+            "A configuração de produção está incompleta. Corrija as variáveis de ambiente:" +
+            string.Concat(problems.Select(p => "\n - " + p)));
+}
+
+// Chave que assina os tokens de login. Sem ela, ou com uma chave conhecida, qualquer pessoa
+// montaria um token válido (até de Admin). Por isso a API nem sobe sem uma chave de verdade,
+// em nenhum ambiente.
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (!ProductionConfigValidator.IsValidJwtKey(jwtKey))
+    throw new InvalidOperationException(
+        $"Configure Jwt:Key com pelo menos {ProductionConfigValidator.MinJwtKeyBytes} caracteres aleatórios: no desenvolvimento, " +
+        "\"dotnet user-secrets set Jwt:Key <chave>\"; em produção, a variável de ambiente Jwt__Key.");
 
 builder.Services
     .AddControllers()
@@ -116,15 +140,6 @@ builder.Services.AddHttpClient<CloudinaryCleanup>(client =>
 });
 builder.Services.AddHostedService<CleanupService>();
 
-// Chave que assina os tokens de login. Sem ela, ou com uma chave conhecida, qualquer pessoa
-// montaria um token válido (até de Admin). Por isso a API nem sobe sem uma chave de verdade.
-// O HS512 exige pelo menos 64 bytes.
-var jwtKey = builder.Configuration["Jwt:Key"];
-if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 64)
-    throw new InvalidOperationException(
-        "Configure Jwt:Key com pelo menos 64 caracteres aleatórios: no desenvolvimento, " +
-        "\"dotnet user-secrets set Jwt:Key <chave>\"; em produção, a variável de ambiente Jwt__Key.");
-
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -151,8 +166,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 const string CorsPolicy = "FrontendPolicy";
 
-// Origens vêm do appsettings (Cors:AllowedOrigins) pra não precisar mexer
-// no código ao publicar. Fallback: localhost:3000.
+// Origens vêm da configuração (Cors:AllowedOrigins): localhost:3000 no appsettings.Development.json,
+// o domínio do frontend em produção (Cors__AllowedOrigins__0). Fallback: localhost:3000.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
                      ?? new[] { "http://localhost:3000" };
 
@@ -172,13 +187,32 @@ builder.Services.AddCors(options =>
 // "por IP" viraria um limite único para todos os clientes, e sem X-Forwarded-Proto a API acharia
 // que a requisição é HTTP e redirecionaria para HTTPS sem necessidade.
 // Só os cabeçalhos vindos de proxies confiáveis são aceitos (senão qualquer um mandaria um
-// X-Forwarded-For falso para fugir do rate limit). Localhost já é confiável por padrão;
-// outros IPs vão em ReverseProxy:KnownProxies.
+// X-Forwarded-For falso para fugir do rate limit). Localhost já é confiável por padrão. Na
+// hospedagem (seção ReverseProxy):
+// - KnownProxies: IPs fixos do proxy (nginx em outra máquina, por exemplo);
+// - KnownNetworks: faixas de IP do proxy, em CIDR ("10.0.0.0/8"), quando o IP muda;
+// - TrustAll: aceita o cabeçalho de qualquer origem. Só para hospedagens em que a API não pode
+//   ser acessada sem passar pelo proxy delas (Render, Railway, Fly.io, Azure App Service...);
+// - ForwardLimit: quantos proxies seguidos (Cloudflare na frente do proxy da hospedagem = 2).
+// Se chegar X-Forwarded-For que a API não aceita, ela avisa no log (ver mais abaixo).
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    foreach (var ip in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [])
+    var proxy = builder.Configuration.GetSection("ReverseProxy");
+    options.ForwardLimit = proxy.GetValue("ForwardLimit", 1);
+
+    if (proxy.GetValue<bool>("TrustAll"))
+    {
+        // Sem nenhum proxy ou rede conhecida, o middleware aceita qualquer origem.
+        options.KnownProxies.Clear();
+        options.KnownIPNetworks.Clear();
+        return;
+    }
+
+    foreach (var ip in proxy.GetSection("KnownProxies").Get<string[]>() ?? [])
         options.KnownProxies.Add(IPAddress.Parse(ip));
+    foreach (var network in proxy.GetSection("KnownNetworks").Get<string[]>() ?? [])
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
 });
 
 // Limite de pedidos públicos: 10 por minuto por IP.
@@ -270,6 +304,23 @@ if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", false))
 
 // Primeiro de todos: o resto do pipeline (rate limit, HTTPS, logs) precisa do IP e do esquema reais.
 app.UseForwardedHeaders();
+
+// Quando o X-Forwarded-For é aceito, o middleware acima o consome. Se ele continua aqui, veio de
+// um proxy que a API não aceita (ou de mais proxies seguidos do que o ForwardLimit). Atrás do
+// proxy da hospedagem, isso faria todo mundo dividir o mesmo limite de tentativas, porque o IP
+// visto seria o do proxy. Avisa uma vez no log, com o que configurar.
+var proxyWarningLogged = 0;
+app.Use(async (context, next) =>
+{
+    if (context.Request.Headers.ContainsKey("X-Forwarded-For") && Interlocked.Exchange(ref proxyWarningLogged, 1) == 0)
+        app.Logger.LogWarning(
+            "Chegou X-Forwarded-For de um proxy que a API não aceita ({RemoteIp}). O limite de tentativas por IP " +
+            "está usando o IP do proxy, então todos os usuários dividem o mesmo limite. Configure " +
+            "ReverseProxy:KnownNetworks (faixa de IPs do proxy), ReverseProxy:TrustAll (só se a API não puder ser " +
+            "acessada sem passar pelo proxy) ou ReverseProxy:ForwardLimit (mais de um proxy no caminho).",
+            context.Connection.RemoteIpAddress);
+    await next();
+});
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
