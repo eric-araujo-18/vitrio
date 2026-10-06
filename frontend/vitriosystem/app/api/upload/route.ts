@@ -15,6 +15,11 @@ const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http:
 // imagens sem uso dessa pasta. Se dev e produção usarem a mesma conta, use pastas diferentes.
 const FOLDER = process.env.CLOUDINARY_FOLDER || "vitrio";
 
+// Sem as três chaves, o upload falharia com um erro genérico. Assim a resposta e o log dizem o motivo.
+const CLOUDINARY_CONFIGURED = Boolean(
+  process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
+);
+
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -45,6 +50,11 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ") || !(await isAuthenticated(authHeader))) {
       return fail("Não autenticado.", 401);
+    }
+
+    if (!CLOUDINARY_CONFIGURED) {
+      console.error("Upload de imagens: configure CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET no servidor do Next.");
+      return fail("O envio de imagens não está configurado no servidor. Avise o suporte.", 503);
     }
 
     // 2. Barra arquivos grandes antes de carregar o corpo inteiro na memória
