@@ -125,15 +125,18 @@ function Storefront({ slug }: { slug: string }) {
     });
   }, [products, activeCategory, search]);
 
-  const featured = useMemo(() => products.filter((p) => p.isFeatured).slice(0, 8), [products]);
+  // O limite de destaques é aplicado nos cards (ProductGrid), depois de pôr os esgotados no fim.
+  const featured = useMemo(() => products.filter((p) => p.isFeatured), [products]);
 
-  // Cores de uma mesma peça: produtos com o mesmo colorGroupId.
+  // Cores de uma mesma peça: produtos com o mesmo colorGroupId. As cores com estoque vêm
+  // primeiro (bolinhas do card e opções do produto aberto).
   const colorGroups = useMemo(() => {
     const groups = new Map<string, PublicProduct[]>();
     for (const p of products) {
       if (!p.colorGroupId) continue;
       groups.set(p.colorGroupId, [...(groups.get(p.colorGroupId) ?? []), p]);
     }
+    for (const [id, colors] of groups) groups.set(id, inStockFirst(colors, inStock));
     return groups;
   }, [products]);
 
@@ -271,7 +274,7 @@ function Storefront({ slug }: { slug: string }) {
               />
               Destaques
             </h2>
-            <ProductGrid products={featured} colorsOf={colorsOf} onOpen={setSelected} />
+            <ProductGrid products={featured} colorsOf={colorsOf} onOpen={setSelected} limit={8} />
           </section>
         )}
 
@@ -526,29 +529,54 @@ function CategoryChip({
   );
 }
 
+// Tem estoque? Em produto com tamanhos, o estoque é a soma deles: zero = todos esgotados.
+const inStock = (p: PublicProduct) => p.stockQuantity > 0;
+
+// Os com estoque primeiro, mantendo a ordem entre eles (o sort do JS é estável).
+function inStockFirst<T>(items: T[], available: (item: T) => boolean) {
+  return [...items].sort((a, b) => Number(available(b)) - Number(available(a)));
+}
+
 function ProductGrid({
   products,
   colorsOf,
   onOpen,
+  limit,
 }: {
   products: PublicProduct[];
   colorsOf: (product: PublicProduct) => PublicProduct[];
   onOpen: (product: PublicProduct) => void;
+  /** Máximo de cards (aplicado depois de pôr os esgotados no fim) */
+  limit?: number;
 }) {
-  // Cores da mesma peça viram um card só (com bolinhas para trocar):
-  // fica a primeira cor que aparecer na lista filtrada.
-  const seenGroups = new Set<string>();
-  const cards = products.filter((p) => {
-    if (!p.colorGroupId) return true;
-    if (seenGroups.has(p.colorGroupId)) return false;
-    seenGroups.add(p.colorGroupId);
-    return true;
-  });
+  // Cores da mesma peça viram um card só (com bolinhas para trocar). O card fica na posição da
+  // primeira cor da lista filtrada e mostra uma cor com estoque, se houver: primeiro entre as que
+  // passaram no filtro, depois entre as outras cores da peça.
+  const cards: PublicProduct[] = [];
+  const cardIndex = new Map<string, number>();
+  for (const p of products) {
+    if (!p.colorGroupId) {
+      cards.push(p);
+      continue;
+    }
+    const at = cardIndex.get(p.colorGroupId);
+    if (at === undefined) {
+      cardIndex.set(p.colorGroupId, cards.length);
+      cards.push(p);
+    } else if (!inStock(cards[at]) && inStock(p)) {
+      cards[at] = p;
+    }
+  }
+  const shown = cards.map((p) => (inStock(p) ? p : (colorsOf(p).find(inStock) ?? p)));
+
+  // Cards sem nenhuma cor com estoque vão para o fim.
+  const ordered = inStockFirst(shown, (p) => colorsOf(p).some(inStock)).slice(0, limit);
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4 min-[721px]:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-      {cards.map((p) => (
-        <ProductTile key={p.colorGroupId ?? p.id} product={p} colors={colorsOf(p)} onOpen={onOpen} />
+      {ordered.map((p) => (
+        // A chave inclui a cor mostrada: se ela mudar (ex.: estoque acabou), o card recomeça nela.
+        <ProductTile key={`${p.colorGroupId ?? "p"}-${p.id}`} product={p} colors={colorsOf(p)} onOpen={onOpen} />
       ))}
     </div>
   );
