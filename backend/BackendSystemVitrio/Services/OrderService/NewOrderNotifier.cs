@@ -42,6 +42,7 @@ namespace BackendSystemVitrio.Services.OrderService
                         o.Code,
                         o.CustomerName,
                         o.CustomerPhone,
+                        o.ShippingFee,
                         o.Total,
                         o.PaymentMethod,
                         o.Notes,
@@ -49,6 +50,7 @@ namespace BackendSystemVitrio.Services.OrderService
                         StoreSlug = o.Store.Slug,
                         o.Store.NotifyNewOrdersByEmail,
                         OwnerEmail = o.Store.User!.Email,
+                        OwnerEmailConfirmed = o.Store.User.EmailConfirmedAt != null,
                         Items = o.Items
                             .OrderBy(i => i.Id)
                             .Select(i => new { i.ProductName, i.Size, i.Color, i.Quantity, i.UnitPrice })
@@ -56,7 +58,8 @@ namespace BackendSystemVitrio.Services.OrderService
                     })
                     .FirstOrDefaultAsync();
 
-                if (order is null || !order.NotifyNewOrdersByEmail)
+                // E-mail não confirmado pode ser de outra pessoa: não manda pedidos para ele.
+                if (order is null || !order.NotifyNewOrdersByEmail || !order.OwnerEmailConfirmed)
                     return;
 
                 var frontend = (_configuration["App:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/');
@@ -74,6 +77,20 @@ namespace BackendSystemVitrio.Services.OrderService
                         </tr>
                         """);
                 }
+
+                rows.Append(order.ShippingFee is null
+                    ? """
+                      <tr>
+                        <td style="padding:6px 0;color:#6b7280">Entrega</td>
+                        <td style="padding:6px 0;text-align:right;color:#6b7280">a combinar</td>
+                      </tr>
+                      """
+                    : $"""
+                      <tr>
+                        <td style="padding:6px 0;color:#6b7280">Entrega</td>
+                        <td style="padding:6px 0;text-align:right;white-space:nowrap;color:#6b7280">{(order.ShippingFee == 0 ? "grátis" : Money(order.ShippingFee.Value))}</td>
+                      </tr>
+                      """);
 
                 var payment = order.PaymentMethod == OrderPaymentMethod.Online
                     ? "Pago online pelo Mercado Pago. O valor já está na sua conta."

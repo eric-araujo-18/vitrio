@@ -16,4 +16,10 @@ namespace BackendSystemVitrio.DTO
         public string? Token { get; set; }
         public string? NewPassword { get; set; }
     }
+
+    // Confirmação do e-mail com o token do link (EmailConfirmation).
+    public class ConfirmEmailDto
+    {
+        public string? Token { get; set; }
+    }
 }

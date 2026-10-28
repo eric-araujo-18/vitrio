@@ -63,6 +63,19 @@ namespace BackendSystemVitrio.Controllers
         public async Task<IActionResult> ResetPassword(ResetPasswordDto dto)
             => Ok(await _authService.ResetPasswordAsync(dto));
 
+        // POST /api/Auth/confirm-email -> confirma o e-mail com o token do link
+        [HttpPost("confirm-email")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ConfirmEmail(ConfirmEmailDto dto)
+            => Ok(await _authService.ConfirmEmailAsync(dto));
+
+        // POST /api/Auth/resend-confirmation -> manda de novo o link de confirmação do e-mail
+        [HttpPost("resend-confirmation")]
+        [Authorize]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ResendConfirmation()
+            => Ok(await _authService.ResendEmailConfirmationAsync(User.GetUserId()));
+
         // POST /api/Auth/refresh -> chamado automaticamente pelo frontend quando
         // o access token expira. Não precisa de [Authorize]: a credencial aqui
         // é o refresh token do cookie, não o access token (que já expirou).
@@ -111,7 +124,8 @@ namespace BackendSystemVitrio.Controllers
                 Email = user.Email,
                 Phone = user.Phone,
                 Cpf = user.Cpf,
-                Role = user.Role.ToString()
+                Role = user.Role.ToString(),
+                EmailConfirmed = user.EmailConfirmedAt is not null
             };
 
             return Ok(Response<UserDto>.Ok(dto));

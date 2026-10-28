@@ -6,6 +6,7 @@ import type { PublicProduct } from "@/lib/api_public";
 import { cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
 import { useBackdropDismiss } from "@/lib/backdrop";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import { ColorDot, QuantityStepper, storeOverlay, storePrimaryButton, useLockBodyScroll } from "./Ui";
 
 interface ProductModalProps {
@@ -109,7 +110,7 @@ export default function ProductModal({
           <div className="flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">
             {image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={image.url} alt={product.name} className="h-full w-full object-cover" />
+              <img src={imageUrl(image.url, IMAGE_WIDTH.full)} alt={product.name} className="h-full w-full object-cover" />
             ) : (
               <span className="flex flex-col items-center gap-1.5 text-body-md">
                 <ImageOff size={28} aria-hidden="true" />
@@ -134,7 +135,7 @@ export default function ProductModal({
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt="" className="h-full w-full object-cover" />
+                  <img src={imageUrl(img.url, IMAGE_WIDTH.thumb)} alt="" className="h-full w-full object-cover" />
                 </button>
               ))}
             </div>

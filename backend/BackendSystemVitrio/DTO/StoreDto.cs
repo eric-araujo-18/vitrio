@@ -14,6 +14,9 @@ namespace BackendSystemVitrio.DTO
         public required string TertiaryColor { get; set; }
         public bool IsActive { get; set; }
         public bool NotifyNewOrdersByEmail { get; set; }
+        // Entrega (ver Store.DeliveryFee)
+        public decimal? DeliveryFee { get; set; }
+        public decimal? FreeDeliveryFrom { get; set; }
         public DateTime CreationDate { get; set; }
 
         // Ativa, mas fora do ar porque passou do limite de lojas do plano atual.

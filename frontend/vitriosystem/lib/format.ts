@@ -27,6 +27,36 @@ export function whatsappLink(phone: string, text?: string) {
   return `https://wa.me/${full}${query}`;
 }
 
+// Taxa de entrega para esta soma de produtos, pela regra da loja. null = a combinar (fora do
+// total). Mesma conta de DeliveryHelper.FeeFor no backend, que é quem vale no pedido.
+export function deliveryFeeFor(
+  rule: { deliveryFee: number | null; freeDeliveryFrom: number | null },
+  productsTotal: number
+): number | null {
+  if (rule.deliveryFee == null) return null;
+  if (rule.freeDeliveryFrom != null && productsTotal >= rule.freeDeliveryFrom) return 0;
+  return rule.deliveryFee;
+}
+
+// "R$ 10,00", "Grátis" ou "A combinar".
+export function formatDeliveryFee(fee: number | null) {
+  if (fee == null) return "A combinar";
+  return fee === 0 ? "Grátis" : formatPrice(fee);
+}
+
+// Valor digitado num campo de dinheiro: "12,50" / "12.50" / "1.234,56" -> 12.5 / 12.5 / 1234.56
+export function parseMoney(value: string): number {
+  const clean = value.trim().replace(/\s|R\$/g, "");
+  if (!clean) return NaN;
+  const normalized = clean.includes(",") ? clean.replace(/\./g, "").replace(",", ".") : clean;
+  return Number(normalized);
+}
+
+// 12.5 -> "12,50" (valor inicial de um campo de dinheiro)
+export function moneyToInput(value: number | null | undefined) {
+  return value == null ? "" : value.toFixed(2).replace(".", ",");
+}
+
 // Preço que o cliente paga de fato (promocional, se houver).
 export function effectivePrice(p: { price: number; promotionalPrice: number | null }) {
   return p.promotionalPrice != null && p.promotionalPrice < p.price ? p.promotionalPrice : p.price;

@@ -62,6 +62,9 @@ namespace BackendSystemVitrio.Services.StoreService
         {
             try
             {
+                if (await _context.UnconfirmedShopkeeperEmailAsync(userId) is { } unconfirmed)
+                    return Response<StoreDto>.Fail($"Confirme seu e-mail para criar a loja. Enviamos o link para {unconfirmed}.");
+
                 if (string.IsNullOrWhiteSpace(dto.Name))
                     return Response<StoreDto>.Fail("Informe o nome da loja.");
 
@@ -156,6 +159,15 @@ namespace BackendSystemVitrio.Services.StoreService
                 var colorError = ValidateColors(dto.PrimaryColor, dto.SecondaryColor, dto.TertiaryColor);
                 if (colorError is not null)
                     return Response<StoreDto>.Fail(colorError);
+
+                if (dto.Delivery is not null)
+                {
+                    var deliveryError = DeliveryHelper.Validate(dto.Delivery.Fee, dto.Delivery.FreeFrom);
+                    if (deliveryError is not null)
+                        return Response<StoreDto>.Fail(deliveryError);
+                    store.DeliveryFee = dto.Delivery.Fee;
+                    store.FreeDeliveryFrom = dto.Delivery.FreeFrom;
+                }
 
                 if (dto.Description is not null) store.Description = EmptyToNull(dto.Description);
                 if (dto.LogoUrl is not null) store.LogoUrl = EmptyToNull(dto.LogoUrl);
@@ -380,6 +392,8 @@ namespace BackendSystemVitrio.Services.StoreService
             TertiaryColor = s.TertiaryColor,
             IsActive = s.IsActive,
             NotifyNewOrdersByEmail = s.NotifyNewOrdersByEmail,
+            DeliveryFee = s.DeliveryFee,
+            FreeDeliveryFrom = s.FreeDeliveryFrom,
             CreationDate = s.CreationDate
         };
     }

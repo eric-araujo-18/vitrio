@@ -21,6 +21,9 @@ namespace BackendSystemVitrio.Services.OrderService
         private const int OrdersPageSize = 50;
         // Mesmo limite do campo no checkout.
         private const int MaxNotesLength = 500;
+        // Pedidos pagos online seguram o estoque até o prazo. Um mesmo telefone pode ter só alguns
+        // esperando pagamento na mesma loja, para ninguém travar o estoque com pedidos que não paga.
+        private const int MaxOpenOnlineOrdersPerPhone = 3;
 
         private readonly AppDbContext _context;
         private readonly IOrderPaymentService _payments;
@@ -270,6 +273,7 @@ namespace BackendSystemVitrio.Services.OrderService
                         Id = o.Id,
                         Code = o.Code,
                         Status = o.Status,
+                        ShippingFee = o.ShippingFee,
                         Total = o.Total,
                         PaymentMethod = o.PaymentMethod,
                         PaymentStatus = o.PaymentStatus,
@@ -347,6 +351,11 @@ namespace BackendSystemVitrio.Services.OrderService
                 var email = string.IsNullOrWhiteSpace(dto.CustomerEmail) ? null : dto.CustomerEmail.Trim();
                 if (email is not null && !ValidationHelper.IsValidEmail(email))
                     return Response<OrderCreatedDto>.Fail("E-mail inválido.");
+
+                if (online && await _context.Order.CountAsync(o =>
+                        o.StoreId == store.Id && o.CustomerPhone == phone && o.Status == OrderStatus.AwaitingPayment) >= MaxOpenOnlineOrdersPerPhone)
+                    return Response<OrderCreatedDto>.Fail(
+                        "Você já tem pedidos esperando pagamento nesta loja. Pague ou cancele um deles antes de fazer outro.");
 
                 var notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
                 if (notes?.Length > MaxNotesLength)
@@ -500,7 +509,11 @@ namespace BackendSystemVitrio.Services.OrderService
                 foreach (var item in created.Values)
                     order.Items.Add(item);
 
-                order.Total = order.Items.Sum(i => i.UnitPrice * i.Quantity);
+                // Entrega pela regra da loja: taxa fixa (grátis a partir de um valor) ou a combinar,
+                // quando fica fora do total, inclusive no pagamento online.
+                var productsTotal = order.Items.Sum(i => i.UnitPrice * i.Quantity);
+                order.ShippingFee = DeliveryHelper.FeeFor(store, productsTotal);
+                order.Total = productsTotal + (order.ShippingFee ?? 0m);
 
                 _context.Order.Add(order);
                 await _context.SaveChangesAsync();
@@ -531,6 +544,7 @@ namespace BackendSystemVitrio.Services.OrderService
                 return Response<OrderCreatedDto>.Ok(new OrderCreatedDto
                 {
                     Code = order.Code,
+                    ShippingFee = order.ShippingFee,
                     Total = order.Total,
                     StorePhone = store.Phone,
                     PaymentMethod = order.PaymentMethod,
@@ -606,6 +620,7 @@ namespace BackendSystemVitrio.Services.OrderService
             CustomerEmail = o.CustomerEmail,
             Notes = o.Notes,
             Status = o.Status,
+            ShippingFee = o.ShippingFee,
             Total = o.Total,
             PaymentMethod = o.PaymentMethod,
             PaymentStatus = o.PaymentStatus,

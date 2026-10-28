@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { ShoppingBag, Store as StoreIcon } from "lucide-react";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 
 /*
   Miniatura da vitrine, usando as mesmas variáveis de cor da vitrine real.
@@ -44,7 +45,7 @@ export default function StorePreview({
         <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--store-primary)] transition-colors duration-300">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+            <img src={imageUrl(logoUrl, IMAGE_WIDTH.thumb)} alt="" className="h-full w-full object-cover" />
           ) : (
             <StoreIcon size={14} />
           )}

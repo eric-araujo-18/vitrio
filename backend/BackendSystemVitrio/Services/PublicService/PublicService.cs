@@ -2,9 +2,11 @@ using System.Linq.Expressions;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
 using BackendSystemVitrio.Models;
+using BackendSystemVitrio.Services.Captcha;
 using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Wrappers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BackendSystemVitrio.Services.PublicService
 {
@@ -16,11 +18,13 @@ namespace BackendSystemVitrio.Services.PublicService
 
         private readonly AppDbContext _context;
         private readonly IOrderPaymentService _payments;
+        private readonly TurnstileOptions _captcha;
 
-        public PublicService(AppDbContext context, IOrderPaymentService payments)
+        public PublicService(AppDbContext context, IOrderPaymentService payments, IOptions<TurnstileOptions> captcha)
         {
             _context = context;
             _payments = payments;
+            _captcha = captcha.Value;
         }
 
         public async Task<Response<PublicStoreDto>> GetStoreAsync(string slug)
@@ -39,6 +43,9 @@ namespace BackendSystemVitrio.Services.PublicService
                 LogoUrl = store.LogoUrl,
                 Phone = store.Phone,
                 OnlinePayment = await _payments.IsAvailableAsync(store.Id, found.Plan),
+                DeliveryFee = store.DeliveryFee,
+                FreeDeliveryFrom = store.DeliveryFee is > 0 ? store.FreeDeliveryFrom : null,
+                CaptchaSiteKey = _captcha.Enabled ? _captcha.SiteKey : null,
                 PrimaryColor = store.PrimaryColor,
                 SecondaryColor = store.SecondaryColor,
                 TertiaryColor = store.TertiaryColor,
@@ -76,6 +83,12 @@ namespace BackendSystemVitrio.Services.PublicService
             if (found is null)
                 return Response<List<PublicProductDto>>.Fail(NotFound);
 
+            // Uma página além desta estouraria o int no Skip (OFFSET negativo e erro 500). Nenhuma
+            // loja chega perto disso, então a resposta é simplesmente uma página vazia.
+            page = Math.Max(page, 1);
+            if (page > int.MaxValue / ProductsPageSize)
+                return Response<List<PublicProductDto>>.Ok(new List<PublicProductDto>());
+
             var query = await _context.VisibleProductsAsync(found);
 
             if (!string.IsNullOrWhiteSpace(categorySlug))
@@ -95,7 +108,7 @@ namespace BackendSystemVitrio.Services.PublicService
                 .OrderByDescending(p => p.IsFeatured)
                 .ThenByDescending(p => p.CreationDate)
                 .ThenByDescending(p => p.Id)
-                .Skip((Math.Max(page, 1) - 1) * ProductsPageSize)
+                .Skip((page - 1) * ProductsPageSize)
                 .Take(ProductsPageSize)
                 .Select(ToDtoExpression)
                 .ToListAsync();

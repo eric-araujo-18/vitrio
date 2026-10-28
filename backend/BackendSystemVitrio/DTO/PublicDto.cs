@@ -11,6 +11,13 @@ namespace BackendSystemVitrio.DTO
         public string? Phone { get; set; }
         // A loja aceita "pagar agora" pelo Mercado Pago no checkout.
         public bool OnlinePayment { get; set; }
+        // Entrega: taxa fixa (null = a combinar com a loja, 0 = grátis) e frete grátis a partir de
+        // um valor em produtos. O checkout mostra o mesmo cálculo de DeliveryHelper.FeeFor.
+        public decimal? DeliveryFee { get; set; }
+        public decimal? FreeDeliveryFrom { get; set; }
+        // Chave pública do captcha (Cloudflare Turnstile) que o checkout precisa mostrar. Null = sem
+        // captcha. Vem do servidor para o frontend nunca exigir um captcha que a API não confere (ou o contrário).
+        public string? CaptchaSiteKey { get; set; }
         public required string PrimaryColor { get; set; }
         public required string SecondaryColor { get; set; }
         public required string TertiaryColor { get; set; }

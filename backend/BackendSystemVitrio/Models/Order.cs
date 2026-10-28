@@ -37,6 +37,11 @@ namespace BackendSystemVitrio.Models
 
         public OrderStatus Status { get; set; } = OrderStatus.Pending;
 
+        // Taxa de entrega cobrada no pedido, já somada ao Total. Null = frete a combinar com a loja
+        // (fora do total); 0 = entrega grátis. Cópia da regra da loja no momento do pedido.
+        public decimal? ShippingFee { get; set; }
+
+        // Produtos + ShippingFee.
         public decimal Total { get; set; }
 
         // ===== Pagamento online (Mercado Pago, na conta da loja) =====

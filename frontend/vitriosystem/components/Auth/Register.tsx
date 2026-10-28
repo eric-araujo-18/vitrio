@@ -72,8 +72,8 @@ export default function Register() {
       }
 
       // RegisterAsync não gera token — só cria o usuário. Por isso aqui
-      // manda pro login em vez de já autenticar direto.
-      router.push("/auth/login");
+      // manda pro login (que avisa do e-mail de confirmação) em vez de já autenticar direto.
+      router.push("/auth/login?cadastro=1");
     } catch (err) {
       // Chega aqui só em falha de rede/servidor, não em regra de negócio
       // (essa já foi tratada acima).

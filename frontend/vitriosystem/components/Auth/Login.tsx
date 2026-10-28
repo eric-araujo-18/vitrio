@@ -3,14 +3,14 @@
 import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IdCard, Lock, LogIn } from "lucide-react";
+import { CircleCheck, IdCard, Lock, LogIn } from "lucide-react";
 import { getMe, login, ROLES } from "@/lib/api";
 import { formatCpf, isValidCpf } from "@/lib/validators";
 import { useAuth, useGuestOnly } from "@/lib/auth_context";
 import { AuthLayout } from "../Auth/components/AuthLayout";
 import { AuthError, AuthInput, AuthSubmit } from "../Auth/components/AuthFields";
 
-export default function Login() {
+export default function Login({ justRegistered = false }: { justRegistered?: boolean }) {
   const router = useRouter();
   const { refresh, logoutHere } = useAuth();
 
@@ -74,6 +74,19 @@ export default function Login() {
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        {justRegistered && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-body-md text-emerald-800"
+          >
+            <CircleCheck size={18} aria-hidden="true" className="mt-px shrink-0" />
+            <span>
+              Conta criada! Enviamos um link de confirmação para o seu e-mail. Entre e confirme o e-mail para criar
+              sua loja.
+            </span>
+          </div>
+        )}
+
         <AuthInput
           id="cpf"
           label="CPF"

@@ -1,6 +1,8 @@
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Enum;
 using BackendSystemVitrio.Helpers;
+using BackendSystemVitrio.Services.AuthService;
 using BackendSystemVitrio.Wrappers;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,11 +12,13 @@ namespace BackendSystemVitrio.Services.UserService
     {
         private readonly AppDbContext _context;
         private readonly ILogger<UserService> _logger;
+        private readonly EmailConfirmation _emailConfirmation;
 
-        public UserService(AppDbContext context, ILogger<UserService> logger)
+        public UserService(AppDbContext context, ILogger<UserService> logger, EmailConfirmation emailConfirmation)
         {
             _context = context;
             _logger = logger;
+            _emailConfirmation = emailConfirmation;
         }
 
         public async Task<Response<UserDto>> UpdateUserAsync(int userId, UpdateUserDto dto)
@@ -55,6 +59,11 @@ namespace BackendSystemVitrio.Services.UserService
                             return Response<UserDto>.Fail("Este e-mail já está em uso.");
 
                         user.Email = email;
+                        // O e-mail novo ainda não foi confirmado: o lojista confirma de novo (até lá,
+                        // não recebe avisos de pedido nesse endereço).
+                        user.EmailConfirmedAt = null;
+                        if (user.Role == Role.Shopkeeper)
+                            _emailConfirmation.Send(user);
                     }
                 }
 
@@ -75,7 +84,8 @@ namespace BackendSystemVitrio.Services.UserService
                     Email = user.Email,
                     Phone = user.Phone,
                     Cpf = user.Cpf,
-                    Role = user.Role.ToString()
+                    Role = user.Role.ToString(),
+                    EmailConfirmed = user.EmailConfirmedAt is not null
                 }, "Perfil atualizado com sucesso.");
             }
             catch (Exception ex)

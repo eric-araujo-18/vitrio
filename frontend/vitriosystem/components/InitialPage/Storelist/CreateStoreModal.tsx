@@ -16,6 +16,7 @@ import {
 import { createStore, unwrap, type Store, type CreateStorePayload } from "@/lib/api";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
 import { uploadImage } from "@/lib/upload";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import StorePreview from "../StorePreview/StorePreview";
 import { primaryButtonClass } from "./StoreCard";
 
@@ -302,7 +303,7 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
                 ref={fileInputRef}
                 id="storeLogo"
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 onChange={handleLogoChange}
                 disabled={uploading}
                 className="sr-only"
@@ -312,7 +313,7 @@ export default function CreateStoreModal({ onClose, onCreated }: CreateStoreModa
                 <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-surface p-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={logoUrl}
+                    src={imageUrl(logoUrl, IMAGE_WIDTH.thumb)}
                     alt="Preview do logo"
                     className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 bg-white object-contain"
                   />

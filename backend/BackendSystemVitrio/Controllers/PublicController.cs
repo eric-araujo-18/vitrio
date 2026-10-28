@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using BackendSystemVitrio.DTO;
+using BackendSystemVitrio.Services.Captcha;
 using BackendSystemVitrio.Services.OrderPaymentService;
 using BackendSystemVitrio.Services.OrderService;
 using BackendSystemVitrio.Services.PublicService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using BackendSystemVitrio.Wrappers;
 
 namespace BackendSystemVitrio.Controllers
 {
@@ -18,12 +20,14 @@ namespace BackendSystemVitrio.Controllers
         private readonly IPublicService _publicService;
         private readonly IOrderService _orderService;
         private readonly IOrderPaymentService _orderPayments;
+        private readonly TurnstileVerifier _captcha;
 
-        public PublicController(IPublicService publicService, IOrderService orderService, IOrderPaymentService orderPayments)
+        public PublicController(IPublicService publicService, IOrderService orderService, IOrderPaymentService orderPayments, TurnstileVerifier captcha)
         {
             _publicService = publicService;
             _orderService = orderService;
             _orderPayments = orderPayments;
+            _captcha = captcha;
         }
 
         // GET /api/Public/stores/{slug}
@@ -54,11 +58,15 @@ namespace BackendSystemVitrio.Controllers
         }
 
         // POST /api/Public/stores/{slug}/orders -> checkout
-        // Limitado por IP (ver Program.cs) pra dificultar spam de pedidos falsos.
+        // Contra pedidos falsos (que seguram o estoque): limite por IP (ver Program.cs) e, com
+        // Turnstile configurado, o captcha do checkout.
         [HttpPost("orders")]
         [EnableRateLimiting("public-orders")]
-        public async Task<IActionResult> CreateOrder(string slug, [FromBody] CreateOrderDto dto)
+        public async Task<IActionResult> CreateOrder(string slug, [FromBody] CreateOrderDto dto, CancellationToken cancellationToken)
         {
+            if (!await _captcha.VerifyAsync(dto.CaptchaToken, HttpContext.Connection.RemoteIpAddress, cancellationToken))
+                return Ok(Response<OrderCreatedDto>.Fail("Não conseguimos confirmar que você não é um robô. Marque a verificação e tente de novo."));
+
             // A rota é pública, mas se o cliente mandou um token válido o pedido
             // fica ligado à conta dele (aparece em "Meus pedidos"). Sem token, ou com
             // token inválido, o pedido é feito normalmente, sem conta.

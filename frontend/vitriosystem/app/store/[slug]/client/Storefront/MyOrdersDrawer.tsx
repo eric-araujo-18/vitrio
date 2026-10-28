@@ -5,7 +5,16 @@ import { CreditCard, ImageOff, LoaderCircle, MapPin, MessageCircle, Package, X }
 import { addressLine1, addressLine2 } from "@/lib/address";
 import { getMyOrders, type CustomerOrder, type OrderStatus } from "@/lib/api_order";
 import { useBackdropDismiss } from "@/lib/backdrop";
-import { formatDateTime, formatPrice, formatTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, whatsappLink } from "@/lib/format";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
+import {
+  formatDateTime,
+  formatDeliveryFee,
+  formatPrice,
+  formatTime,
+  ORDER_STATUS_LABELS,
+  PAYMENT_STATUS_LABELS,
+  whatsappLink,
+} from "@/lib/format";
 import { iconButton, storeOverlay, storeSecondaryButton, useLockBodyScroll } from "./Ui";
 
 interface MyOrdersDrawerProps {
@@ -128,7 +137,7 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
                           {item.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                            <img src={imageUrl(item.imageUrl, IMAGE_WIDTH.thumb)} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <ImageOff size={16} aria-hidden="true" />
                           )}
@@ -164,6 +173,9 @@ export default function MyOrdersDrawer({ storeSlug, storeName, onClose }: MyOrde
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                     <span className="text-body-md text-slate-600">
                       Total <strong className="ml-1 text-slate-900 tabular-nums">{formatPrice(order.total)}</strong>
+                      <span className="block text-body-sm text-slate-500">
+                        Entrega: {formatDeliveryFee(order.shippingFee)}
+                      </span>
                     </span>
                     {order.storePhone && (
                       <a

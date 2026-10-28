@@ -1,6 +1,7 @@
 import { ImageOff, PackageX, Pencil, Star, Trash2, TriangleAlert } from "lucide-react";
 import type { Product } from "@/lib/api_product";
 import { formatPrice } from "@/lib/format";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 
 interface ProductCardProps {
   product: Product;
@@ -32,8 +33,10 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={cover.url}
+            src={imageUrl(cover.url, IMAGE_WIDTH.card)}
             alt={product.name}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (

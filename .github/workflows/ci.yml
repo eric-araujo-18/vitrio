@@ -1,0 +1,56 @@
+# Confere cada push e pull request: testes do backend (com um Postgres só para eles) e lint + build
+# de produção do frontend.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: vitrio
+          POSTGRES_PASSWORD: vitrio123
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vitrio"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      VITRIO_TEST_DB: Host=localhost;Port=5432;Database=vitrio_tests;Username=vitrio;Password=vitrio123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Testes
+        run: dotnet test backend/BackendSystemVitrio.Tests -c Release
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/vitriosystem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/vitriosystem/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: Build de produção
+        run: npm run build
+        env:
+          # Valores só para o build passar: o deploy de verdade usa os da hospedagem.
+          NEXT_PUBLIC_API_URL: https://api.vitrio.example
+          NEXT_PUBLIC_SUPPORT_EMAIL: suporte@vitrio.example

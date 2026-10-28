@@ -5,7 +5,9 @@ using System.Threading.RateLimiting;
 using BackendSystemVitrio.Data;
 using BackendSystemVitrio.Helpers;
 using BackendSystemVitrio.Middlewares;
+using BackendSystemVitrio.Services.AdminService;
 using BackendSystemVitrio.Services.AuthService;
+using BackendSystemVitrio.Services.Captcha;
 using BackendSystemVitrio.Services.CategoryService;
 using BackendSystemVitrio.Services.Cleanup;
 using BackendSystemVitrio.Services.OrderPaymentService;
@@ -15,6 +17,7 @@ using BackendSystemVitrio.Services.ProductService;
 using BackendSystemVitrio.Services.PublicService;
 using BackendSystemVitrio.Services.CustomerService;
 using BackendSystemVitrio.Services.Email;
+using BackendSystemVitrio.Services.Health;
 using BackendSystemVitrio.Services.SubscriptionService;
 using BackendSystemVitrio.Services.Payments;
 using BackendSystemVitrio.Services.StoreService;
@@ -31,8 +34,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Fora do desenvolvimento, a API não sobe com configuração que quebraria em silêncio (links de
 // e-mail para localhost, e-mail de teste do Mercado Pago, remetente que não entrega...): a
 // mensagem lista tudo o que falta (ver ProductionConfigValidator). No desenvolvimento, os valores
-// padrão ficam no appsettings.Development.json e os segredos nos user-secrets.
-if (!builder.Environment.IsDevelopment())
+// padrão ficam no appsettings.Development.json e os segredos nos user-secrets. O ambiente "Testing" é o
+// dos testes automatizados (backend/BackendSystemVitrio.Tests), que montam a própria configuração.
+if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing"))
 {
     var problems = ProductionConfigValidator.Validate(builder.Configuration);
     if (problems.Count > 0)
@@ -41,14 +45,30 @@ if (!builder.Environment.IsDevelopment())
             string.Concat(problems.Select(p => "\n - " + p)));
 }
 
-// Chave que assina os tokens de login. Sem ela, ou com uma chave conhecida, qualquer pessoa
-// montaria um token válido (até de Admin). Por isso a API nem sobe sem uma chave de verdade,
-// em nenhum ambiente.
+// Chave que assina os tokens de login. Sem ela, ou com uma chave conhecida (inclusive as que já
+// passaram pelo git), qualquer pessoa montaria um token válido (até de Admin). Por isso a API nem
+// sobe sem uma chave de verdade, em nenhum ambiente.
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (!ProductionConfigValidator.IsValidJwtKey(jwtKey))
     throw new InvalidOperationException(
-        $"Configure Jwt:Key com pelo menos {ProductionConfigValidator.MinJwtKeyBytes} caracteres aleatórios: no desenvolvimento, " +
+        ProductionConfigValidator.JwtKeyProblem(jwtKey) + " No desenvolvimento: " +
         "\"dotnet user-secrets set Jwt:Key <chave>\"; em produção, a variável de ambiente Jwt__Key.");
+
+// ===== Monitoramento de erros (Sentry, opcional) =====
+// Com Sentry:Dsn, os erros registrados com LogError (e as exceções não tratadas) vão para o
+// Sentry, que avisa por e-mail. Sem ela, os erros ficam só no log da hospedagem.
+var sentryDsn = builder.Configuration["Sentry:Dsn"];
+if (!string.IsNullOrWhiteSpace(sentryDsn))
+{
+    builder.WebHost.UseSentry(options =>
+    {
+        options.Dsn = sentryDsn;
+        options.Environment = builder.Environment.EnvironmentName;
+        // Sem dados pessoais (IP, cookies, usuário) nos eventos.
+        options.SendDefaultPii = false;
+        options.TracesSampleRate = 0;
+    });
+}
 
 builder.Services
     .AddControllers()
@@ -94,6 +114,25 @@ builder.Services.AddScoped<NewOrderNotifier>();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<EmailConfirmation>();
+
+// ===== Captcha do checkout (Cloudflare Turnstile, opcional) =====
+// Com Turnstile:SiteKey e Turnstile:SecretKey, a vitrine mostra o captcha e a API confere a
+// resposta antes de criar o pedido. Sem eles, o checkout não pede captcha.
+builder.Services.Configure<TurnstileOptions>(builder.Configuration.GetSection(TurnstileOptions.Section));
+builder.Services.AddHttpClient<TurnstileVerifier>(client =>
+{
+    client.BaseAddress = new Uri("https://challenges.cloudflare.com/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+// GET /health: a API está no ar e o banco responde (ver DatabaseHealthCheck).
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
+
+// Compressão só nas rotas públicas da vitrine (ver mais abaixo): a lista de produtos de uma
+// loja grande passa de 1 MB sem compressão.
+builder.Services.AddResponseCompression(options => options.EnableForHttps = true);
 
 // ===== Mercado Pago =====
 // Credenciais vêm de "dotnet user-secrets" (desenvolvimento) ou variáveis de ambiente (produção).
@@ -322,7 +361,30 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// Cabeçalhos de segurança em todas as respostas: a API só devolve JSON e redirecionamentos, então
+// nada dela pode ser embutido em outro site, interpretado como outro tipo de arquivo ou carregar
+// scripts. (O Swagger, só no desenvolvimento, precisa de scripts: lá não vai CSP.)
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var headers = context.Response.Headers;
+        headers["X-Content-Type-Options"] = "nosniff";
+        headers["X-Frame-Options"] = "DENY";
+        headers["Referrer-Policy"] = "no-referrer";
+        if (!app.Environment.IsDevelopment())
+            headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+        return Task.CompletedTask;
+    });
+    await next();
+});
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Compressão (gzip/brotli) só na vitrine pública. Essas respostas não têm segredo nenhum; nas
+// rotas com token ou dados da conta, a compressão sobre HTTPS abriria espaço para ataques que
+// adivinham o conteúdo pelo tamanho (BREACH).
+app.UseWhen(context => context.Request.Path.StartsWithSegments("/api/Public"), branch => branch.UseResponseCompression());
 
 if (app.Environment.IsDevelopment())
 {
@@ -337,7 +399,8 @@ else
     // Só fora do desenvolvimento: em dev o frontend chama http://localhost:5020, e com o perfil
     // "https" (necessário para o túnel do Mercado Pago) o redirecionamento 307 para a porta
     // HTTPS quebra o CORS e o navegador mostra "não foi possível conectar".
-    app.UseHttpsRedirection();
+    // O /health fica de fora: a hospedagem costuma consultá-lo por HTTP, direto no contêiner.
+    app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), branch => branch.UseHttpsRedirection());
 }
 
 app.UseCors(CorsPolicy);
@@ -348,5 +411,9 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
+
+// Para os testes de integração (WebApplicationFactory<Program>).
+public partial class Program;

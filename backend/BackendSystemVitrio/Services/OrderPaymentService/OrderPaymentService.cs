@@ -103,7 +103,20 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
             var api = _options.PublicApiUrl.TrimEnd('/');
             var returnUrl = $"{api}/api/Public/stores/{store.Slug}/orders/{order.Code}/payment-return";
             var deadline = order.PaymentDeadline ?? DateTime.UtcNow.AddMinutes(_options.EffectiveOrderPaymentMinutes);
-            var fee = Math.Round(order.Total * _options.MarketplaceFeePercent / 100m, 2);
+            // A comissão do Vitrio vale sobre os produtos, não sobre a taxa de entrega.
+            var fee = Math.Round((order.Total - (order.ShippingFee ?? 0m)) * _options.MarketplaceFeePercent / 100m, 2);
+
+            var items = order.Items.Select(i => new MpPreferenceItem
+            {
+                Id = i.ProductId?.ToString(),
+                Title = Describe(i),
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice,
+                PictureUrl = i.ImageUrl,
+            }).ToList();
+            // A entrega entra como mais um item, para a soma bater com o total do pedido.
+            if (order.ShippingFee is > 0)
+                items.Add(new MpPreferenceItem { Id = "entrega", Title = "Entrega", Quantity = 1, UnitPrice = order.ShippingFee.Value });
 
             // E-mail sugerido no checkout. Nos testes (TestPayerEmail ou TestOrderPayerEmail preenchido),
             // o do cliente não vai: um e-mail real com uma conta de teste o Mercado Pago recusa. E o
@@ -116,14 +129,7 @@ namespace BackendSystemVitrio.Services.OrderPaymentService
 
             var preference = await _mercadoPago.CreatePreferenceAsync(token, new MpPreferenceRequest
             {
-                Items = order.Items.Select(i => new MpPreferenceItem
-                {
-                    Id = i.ProductId?.ToString(),
-                    Title = Describe(i),
-                    Quantity = i.Quantity,
-                    UnitPrice = i.UnitPrice,
-                    PictureUrl = i.ImageUrl,
-                }).ToList(),
+                Items = items,
                 Payer = new { name = order.CustomerName, email = payerEmail },
                 ExternalReference = Reference(order.Id),
                 NotificationUrl = $"{api}/api/Webhooks/mercadopago/orders/{order.StoreId}?source_news=webhooks",

@@ -14,10 +14,12 @@ import {
   Power,
   Save,
   Trash2,
+  Truck,
 } from "lucide-react";
 import { deleteStore, goOnlineStore, unwrap, updateStore } from "@/lib/api";
 import { useAuth } from "@/lib/auth_context";
 import { formatCnpj, isValidCnpj } from "@/lib/validators";
+import { formatPrice, moneyToInput, parseMoney } from "@/lib/format";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
 import OnlinePaymentCard from "../../components/OnlinePaymentCard";
 import {
@@ -274,6 +276,9 @@ export default function ConfiguracoesPage() {
           </div>
         </form>
 
+        {/* Entrega */}
+        <DeliveryCard />
+
         {/* Aviso de pedido novo por e-mail */}
         <section className={card}>
           <label htmlFor="notify-email" className="flex cursor-pointer items-start gap-4">
@@ -463,5 +468,160 @@ export default function ConfiguracoesPage() {
         </section>
       </div>
     </>
+  );
+}
+/* ===========================
+   ENTREGA
+   A combinar (fora do total, como sempre foi), grátis, ou taxa fixa com frete grátis opcional a
+   partir de um valor. O checkout soma a taxa ao total, inclusive no pagamento online.
+=========================== */
+
+type DeliveryMode = "arrange" | "fixed" | "free";
+
+function DeliveryCard() {
+  const { store, setStore } = useShopkeeperStore();
+  const [mode, setMode] = useState<DeliveryMode>(
+    store.deliveryFee == null ? "arrange" : store.deliveryFee === 0 ? "free" : "fixed"
+  );
+  const [fee, setFee] = useState(store.deliveryFee ? moneyToInput(store.deliveryFee) : "");
+  const [freeFrom, setFreeFrom] = useState(moneyToInput(store.freeDeliveryFrom));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  function change<T>(setter: (value: T) => void) {
+    return (value: T) => {
+      setter(value);
+      setSuccess(false);
+    };
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    let delivery: { fee: number | null; freeFrom: number | null } = { fee: null, freeFrom: null };
+    if (mode === "free") delivery = { fee: 0, freeFrom: null };
+    if (mode === "fixed") {
+      const feeValue = parseMoney(fee);
+      if (!Number.isFinite(feeValue) || feeValue <= 0) return setError("Informe o valor da taxa de entrega.");
+      const freeValue = freeFrom.trim() ? parseMoney(freeFrom) : null;
+      if (freeValue != null && (!Number.isFinite(freeValue) || freeValue <= 0)) {
+        return setError("Informe um valor válido para a entrega grátis, ou deixe em branco.");
+      }
+      delivery = { fee: Math.round(feeValue * 100) / 100, freeFrom: freeValue == null ? null : Math.round(freeValue * 100) / 100 };
+    }
+
+    setSaving(true);
+    try {
+      const updated = await unwrap(updateStore(store.id, { delivery }));
+      setStore(updated);
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar a entrega.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const options: { value: DeliveryMode; title: string; text: string }[] = [
+    {
+      value: "arrange",
+      title: "Combinar com o cliente",
+      text: "A entrega fica fora do total. Você combina o valor depois do pedido, inclusive quando ele paga online.",
+    },
+    { value: "fixed", title: "Taxa fixa", text: "Um valor único por pedido, somado ao total e ao pagamento online." },
+    { value: "free", title: "Entrega grátis", text: "Sem taxa em nenhum pedido." },
+  ];
+
+  return (
+    <form onSubmit={handleSave} className={card} noValidate>
+      <div className="flex items-center gap-2">
+        <Truck size={18} aria-hidden="true" className="text-outline" />
+        <h2 className={cardTitle}>Entrega</h2>
+      </div>
+      <p className={cardSubtitle}>O cliente vê a regra no carrinho, antes de fechar o pedido.</p>
+
+      <div role="radiogroup" aria-label="Como cobrar a entrega" className="mt-4 flex flex-col gap-2">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+              mode === option.value ? "border-primary-container bg-primary-fixed/20" : "border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <input
+              type="radio"
+              name="delivery-mode"
+              checked={mode === option.value}
+              onChange={() => change(setMode)(option.value)}
+              disabled={saving}
+              className="mt-1 h-4 w-4 shrink-0 accent-primary-container"
+            />
+            <span>
+              <span className="block text-body-md font-semibold text-on-surface">{option.title}</span>
+              <span className="block text-body-sm text-on-surface-variant">{option.text}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {mode === "fixed" && (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="delivery-fee" className={label}>
+              Valor da taxa
+            </label>
+            <input
+              id="delivery-fee"
+              value={fee}
+              onChange={(e) => change(setFee)(e.target.value)}
+              placeholder="0,00"
+              inputMode="decimal"
+              disabled={saving}
+              className={input}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="delivery-free-from" className={label}>
+              Grátis a partir de <span className="font-normal text-outline">(opcional)</span>
+            </label>
+            <input
+              id="delivery-free-from"
+              value={freeFrom}
+              onChange={(e) => change(setFreeFrom)(e.target.value)}
+              placeholder="Ex.: 200,00"
+              inputMode="decimal"
+              disabled={saving}
+              className={input}
+            />
+            <p className={hint}>Soma dos produtos do pedido.</p>
+          </div>
+        </div>
+      )}
+
+      {store.deliveryFee != null && store.deliveryFee > 0 && (
+        <p className={`${hint} mt-3`}>
+          Hoje: {formatPrice(store.deliveryFee)} por pedido
+          {store.freeDeliveryFrom != null ? `, grátis a partir de ${formatPrice(store.freeDeliveryFrom)}` : ""}.
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-col gap-3">
+        {error && <ErrorBox>{error}</ErrorBox>}
+        {success && <SuccessBox>Entrega salva.</SuccessBox>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={saving} className={btnPrimary}>
+            {saving ? (
+              <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
+            ) : (
+              <Save size={16} aria-hidden="true" />
+            )}
+            {saving ? "Salvando..." : "Salvar entrega"}
+          </button>
+        </div>
+      </div>
+    </form>
   );
 }

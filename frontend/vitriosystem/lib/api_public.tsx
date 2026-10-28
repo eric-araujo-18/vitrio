@@ -13,6 +13,12 @@ export interface PublicStore {
   phone: string | null;
   /** A loja aceita "pagar agora" pelo Mercado Pago no checkout. */
   onlinePayment: boolean;
+  /** Taxa de entrega: null = a combinar com a loja, 0 = grátis (ver deliveryFeeFor). */
+  deliveryFee: number | null;
+  /** Frete grátis a partir deste valor em produtos. */
+  freeDeliveryFrom: number | null;
+  /** Chave pública do captcha (Cloudflare Turnstile) do checkout. null = sem captcha. */
+  captchaSiteKey: string | null;
   primaryColor: string;
   secondaryColor: string;
   tertiaryColor: string;
@@ -56,10 +62,14 @@ export interface CreateOrderPayload {
   shippingAddress?: AddressPayload;
   /** "Online" só se a loja oferece (PublicStore.onlinePayment). Padrão: combinar com a loja. */
   paymentMethod?: OrderPaymentMethod;
+  /** Resposta do captcha, quando a loja pede (PublicStore.captchaSiteKey). */
+  captchaToken?: string;
 }
 
 export interface OrderCreated {
   code: string;
+  /** Taxa de entrega já somada ao total. null = a combinar com a loja. */
+  shippingFee: number | null;
   total: number;
   storePhone: string | null;
   paymentMethod: OrderPaymentMethod;

@@ -288,6 +288,16 @@ namespace BackendSystemVitrio.Data
                 .Property(o => o.Total)
                 .HasPrecision(12, 2);
 
+            modelBuilder.Entity<Order>()
+                .Property(o => o.ShippingFee)
+                .HasPrecision(12, 2);
+
+            modelBuilder.Entity<Store>(store =>
+            {
+                store.Property(s => s.DeliveryFee).HasPrecision(12, 2);
+                store.Property(s => s.FreeDeliveryFrom).HasPrecision(12, 2);
+            });
+
             // ===== Pagamento online do pedido =====
             modelBuilder.Entity<Order>(order =>
             {

@@ -15,6 +15,7 @@ import { uploadImage } from "@/lib/upload";
 import { formatPhone, isValidPhone } from "@/lib/validators";
 import StorePreview from "../../../../../../components/InitialPage/StorePreview/StorePreview";
 import { useShopkeeperStore } from "../../components/ShopkeeperStoreContext";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import {
   ErrorBox,
   PageHeader,
@@ -127,7 +128,7 @@ export default function PersonalizacaoPage() {
                   <LoaderCircle size={22} aria-hidden="true" className="animate-spin text-primary-container" />
                 ) : logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logoUrl} alt="Logo da loja" className="h-full w-full object-cover" />
+                  <img src={imageUrl(logoUrl, IMAGE_WIDTH.thumb)} alt="Logo da loja" className="h-full w-full object-cover" />
                 ) : (
                   <StoreIcon size={26} aria-hidden="true" />
                 )}

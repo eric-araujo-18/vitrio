@@ -31,6 +31,13 @@ namespace BackendSystemVitrio.Models
         // Manda um e-mail para o dono a cada pedido novo (além do aviso no painel).
         public bool NotifyNewOrdersByEmail { get; set; } = true;
 
+        // ===== Entrega =====
+        // Taxa fixa cobrada no pedido. Null = a loja combina o frete com o cliente (fica fora do
+        // total, inclusive no pagamento online); 0 = entrega grátis.
+        public decimal? DeliveryFee { get; set; }
+        // Pedidos a partir deste valor (soma dos produtos) não pagam a taxa. Null = sem frete grátis.
+        public decimal? FreeDeliveryFrom { get; set; }
+
         public DateTime CreationDate { get; set; } = DateTime.UtcNow;
         public DateTime? DeletionDate { get; set; } = null;
 

@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth_context";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import { useShopkeeperStore } from "../ShopkeeperStoreContext";
 import { StatusBadge } from "../Ui";
 
@@ -80,7 +81,7 @@ export default function SidebarShopkeeper() {
         >
           {store.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={store.logoUrl} alt="" className="h-full w-full object-cover" />
+            <img src={imageUrl(store.logoUrl, IMAGE_WIDTH.thumb)} alt="" className="h-full w-full object-cover" />
           ) : (
             <StoreIcon size={18} strokeWidth={2.25} />
           )}

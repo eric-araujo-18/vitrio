@@ -20,7 +20,9 @@ const CLOUDINARY_CONFIGURED = Boolean(
   process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
 );
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+// 4 MB: abaixo do limite de 4,5 MB por requisição da Vercel. O navegador já reduz a foto antes de
+// enviar (lib/upload.ts), então uma foto de celular fica bem abaixo disso.
+const MAX_SIZE = 4 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function fail(mensagem: string, status: number) {
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     // 2. Barra arquivos grandes antes de carregar o corpo inteiro na memória
     const contentLength = Number(req.headers.get("content-length") ?? 0);
     if (contentLength > MAX_SIZE + 1024 * 64) {
-      return fail("Imagem muito grande (máx. 5MB).", 413);
+      return fail("Imagem muito grande (máx. 4 MB).", 413);
     }
 
     const formData = await req.formData();
@@ -77,7 +79,7 @@ export async function POST(req: NextRequest) {
 
     // 4. Tamanho
     if (file.size > MAX_SIZE) {
-      return fail("Imagem muito grande (máx. 5MB).", 400);
+      return fail("Imagem muito grande (máx. 4 MB).", 400);
     }
 
     // 5. Upload

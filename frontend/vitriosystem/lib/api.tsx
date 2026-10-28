@@ -57,6 +57,8 @@ export interface User {
   phone: string | null;
   cpf: string | null; // clientes da vitrine não têm CPF
   role: string;
+  /** O lojista confirmou o e-mail. Sem isso, não cria loja nem assina plano. */
+  emailConfirmed: boolean;
 }
 
 export interface Store {
@@ -73,6 +75,10 @@ export interface Store {
   isActive: boolean;
   /** E-mail para o dono a cada pedido novo. */
   notifyNewOrdersByEmail: boolean;
+  /** Taxa de entrega: null = a combinar com o cliente, 0 = grátis. */
+  deliveryFee: number | null;
+  /** Frete grátis a partir deste valor em produtos (só com taxa > 0). */
+  freeDeliveryFrom: number | null;
   creationDate: string;
   /** Ativa, mas fora do ar porque passou do limite de lojas do plano atual. */
   blockedByPlan: boolean;
@@ -97,6 +103,8 @@ export interface CreateStorePayload {
 export interface UpdateStorePayload extends Partial<CreateStorePayload> {
   isActive?: boolean;
   notifyNewOrdersByEmail?: boolean;
+  /** Quando vem, substitui a regra de entrega inteira. fee null = a combinar. */
+  delivery?: { fee: number | null; freeFrom: number | null };
 }
 
 // ===== Access Token em memória (nunca em localStorage/cookie legível por JS) =====
@@ -257,6 +265,16 @@ export function forgotPassword(email: string, storeSlug?: string) {
 // Troca a senha com o token que veio no link do e-mail.
 export function resetPassword(token: string, newPassword: string) {
   return request<string>("/api/Auth/reset-password", "POST", { token, newPassword });
+}
+
+// Confirma o e-mail com o token do link enviado no cadastro. dados = o e-mail confirmado.
+export function confirmEmail(token: string) {
+  return request<string>("/api/Auth/confirm-email", "POST", { token });
+}
+
+// Manda de novo o link de confirmação para o e-mail da conta logada.
+export function resendEmailConfirmation() {
+  return request<string>("/api/Auth/resend-confirmation", "POST", undefined, true);
 }
 
 export async function login(payload: LoginPayload) {

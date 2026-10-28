@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   CircleAlert,
@@ -31,9 +31,11 @@ import {
 } from "@/lib/address";
 import { savePendingPayment } from "@/lib/pending_payment";
 import AddressFields from "./AddressFields";
-import { formatPrice, whatsappLink } from "@/lib/format";
+import Turnstile, { type TurnstileHandle } from "./Turnstile";
+import { deliveryFeeFor, formatDeliveryFee, formatPrice, whatsappLink } from "@/lib/format";
 import { formatPhone, isValidPhone, isvalidEmail } from "@/lib/validators";
 import { useBackdropDismiss } from "@/lib/backdrop";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import {
   QuantityStepper,
   iconButton,
@@ -92,6 +94,18 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<OrderCreated | null>(null);
 
+  // Captcha (só quando a loja pede): a resposta vai com o pedido e vale uma vez só.
+  const captchaRef = useRef<TurnstileHandle>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaFailed, setCaptchaFailed] = useState(false);
+
+  // Entrega pela regra da loja (a mesma conta do backend, que é quem vale no pedido).
+  // null = a combinar com a loja, fora do total.
+  const shippingFee = deliveryFeeFor(store, totalPrice);
+  const orderTotal = totalPrice + (shippingFee ?? 0);
+  const missingForFreeShipping =
+    shippingFee != null && shippingFee > 0 && store.freeDeliveryFrom != null ? store.freeDeliveryFrom - totalPrice : null;
+
   useLockBodyScroll();
   const backdrop = useBackdropDismiss(() => !sending && onClose());
 
@@ -149,6 +163,14 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
       if (invalidAddress) return setError(invalidAddress);
     }
 
+    if (store.captchaSiteKey && !captchaToken) {
+      return setError(
+        captchaFailed
+          ? "Não foi possível carregar a verificação de segurança. Confira sua conexão e recarregue a página."
+          : "Aguarde a verificação de segurança, logo acima, terminar e tente de novo."
+      );
+    }
+
     setSending(true);
     try {
       // Endereço salvo -> manda só o id. Novo -> manda o endereço inteiro
@@ -178,6 +200,7 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
           addressId,
           shippingAddress,
           paymentMethod: payOnline ? "Online" : "Arrange",
+          captchaToken: captchaToken ?? undefined,
           items: items.map((i) => ({
             productId: i.productId,
             variantId: i.variantId ?? undefined,
@@ -205,6 +228,8 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
       // Pode ter sido estoque ou produto que saiu da vitrine: recarrega e o carrinho se acerta
       // (o aviso diz o que mudou).
       onStockChanged?.();
+      // A resposta do captcha já foi gasta nesta tentativa: gera outra para a próxima.
+      captchaRef.current?.reset();
     } finally {
       setSending(false);
     }
@@ -255,7 +280,14 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
             <p className="text-headline-sm text-slate-900">
               Pedido <span className="font-mono">#{created.code}</span> recebido!
             </p>
-            <p className="text-body-md text-slate-500">Total: {formatPrice(created.total)}</p>
+            <p className="text-body-md text-slate-500">
+              Total: {formatPrice(created.total)}
+              {created.shippingFee == null
+                ? " (entrega a combinar)"
+                : created.shippingFee > 0
+                  ? ` (com entrega de ${formatPrice(created.shippingFee)})`
+                  : " (entrega grátis)"}
+            </p>
             <p className="max-w-xs text-body-md text-slate-500">
               A loja vai entrar em contato pelo telefone informado para combinar pagamento e entrega.
             </p>
@@ -313,7 +345,7 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
                     <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                        <img src={imageUrl(item.imageUrl, IMAGE_WIDTH.thumb)} alt="" className="h-full w-full object-cover" />
                       ) : (
                         <ImageOff size={18} aria-hidden="true" />
                       )}
@@ -519,16 +551,42 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
                       className={`${storeInput} resize-y py-2.5`}
                     />
                   </Field>
+
+                  {store.captchaSiteKey && (
+                    <Turnstile
+                      ref={captchaRef}
+                      siteKey={store.captchaSiteKey}
+                      onToken={setCaptchaToken}
+                      onLoadError={() => setCaptchaFailed(true)}
+                    />
+                  )}
                 </form>
               )}
             </div>
 
             {/* Rodapé */}
             <div className="flex flex-col gap-3 border-t border-slate-100 px-5 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-              <div className="flex items-baseline justify-between">
-                <span className="text-body-lg text-slate-600">Total</span>
-                <strong className="text-[22px] font-extrabold text-slate-900">{formatPrice(totalPrice)}</strong>
-              </div>
+              <dl className="flex flex-col gap-1">
+                <div className="flex items-baseline justify-between text-body-md text-slate-500">
+                  <dt>Produtos</dt>
+                  <dd className="tabular-nums">{formatPrice(totalPrice)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between text-body-md text-slate-500">
+                  <dt>Entrega</dt>
+                  <dd className={`tabular-nums ${shippingFee === 0 ? "font-semibold text-emerald-700" : ""}`}>
+                    {formatDeliveryFee(shippingFee)}
+                  </dd>
+                </div>
+                {missingForFreeShipping != null && missingForFreeShipping > 0 && (
+                  <p className="text-body-sm text-slate-500">
+                    Faltam {formatPrice(missingForFreeShipping)} para a entrega grátis.
+                  </p>
+                )}
+                <div className="flex items-baseline justify-between pt-1">
+                  <dt className="text-body-lg text-slate-600">Total</dt>
+                  <dd className="text-[22px] font-extrabold text-slate-900 tabular-nums">{formatPrice(orderTotal)}</dd>
+                </div>
+              </dl>
 
               {error && (
                 <div
@@ -577,7 +635,9 @@ export default function CartDrawer({ store, onClose, onStockChanged, onRequestLo
 
               <p className="text-center text-body-sm text-slate-400">
                 {payOnline
-                  ? "Você paga no Mercado Pago. Os itens ficam reservados enquanto você paga."
+                  ? shippingFee == null
+                    ? "Você paga os produtos no Mercado Pago; a entrega é combinada com a loja. Os itens ficam reservados enquanto você paga."
+                    : "Você paga no Mercado Pago. Os itens ficam reservados enquanto você paga."
                   : "O pagamento é combinado diretamente com a loja."}
               </p>
             </div>

@@ -37,6 +37,14 @@ namespace BackendSystemVitrio.Data
             }
         }
 
+        // E-mail do lojista que ainda não o confirmou (null = confirmado, ou não é lojista). Sem a
+        // confirmação ele não cria loja nem assina plano: o e-mail pode ser de outra pessoa.
+        public static Task<string?> UnconfirmedShopkeeperEmailAsync(this AppDbContext context, int userId)
+            => context.User
+                .Where(u => u.Id == userId && u.Role == Role.Shopkeeper && u.EmailConfirmedAt == null)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync();
+
         // Busca a loja só se ela pertencer ao usuário e não estiver excluída.
         // Retornar null tanto pra "não existe" quanto pra "não é sua" evita
         // revelar quais IDs de loja existem.

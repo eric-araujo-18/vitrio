@@ -202,6 +202,10 @@ namespace BackendSystemVitrio.Services.SubscriptionService
                 if (user is null)
                     return Response<CheckoutResultDto>.Fail("Usuário não encontrado.");
 
+                // A cobrança vai para o e-mail da conta: ele precisa ser do lojista.
+                if (user.Role == Role.Shopkeeper && user.EmailConfirmedAt is null)
+                    return Response<CheckoutResultDto>.Fail($"Confirme seu e-mail antes de mudar de plano. Enviamos o link para {user.Email}.");
+
                 var target = await _context.Plan.FirstOrDefaultAsync(p => p.Code == planCode && p.IsActive);
                 if (target is null)
                     return Response<CheckoutResultDto>.Fail("Plano não encontrado.");

@@ -18,5 +18,16 @@ namespace BackendSystemVitrio.DTO
 
         // E-mail para o dono a cada pedido novo.
         public bool? NotifyNewOrdersByEmail { get; set; }
+
+        // Regra de entrega. Quando vem, substitui a anterior inteira (null dentro dela tem significado).
+        public DeliverySettingsDto? Delivery { get; set; }
+    }
+
+    public class DeliverySettingsDto
+    {
+        // Null = frete a combinar com o cliente; 0 = grátis; > 0 = taxa fixa.
+        public decimal? Fee { get; set; }
+        // Frete grátis a partir deste valor em produtos (só com taxa > 0). Null = nunca.
+        public decimal? FreeFrom { get; set; }
     }
 }

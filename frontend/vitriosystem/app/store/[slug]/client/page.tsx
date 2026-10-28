@@ -34,6 +34,7 @@ import {
 import { CartProvider, cartItemKey, useCart } from "@/lib/cart";
 import { formatPrice, whatsappLink } from "@/lib/format";
 import { useAuth } from "@/lib/auth_context";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import ProductModal from "./Storefront/ProductModal";
 import CartDrawer from "./Storefront/CartDrawer";
 import CustomerAuthModal from "./Storefront/CustomerAuthModal";
@@ -214,7 +215,7 @@ function Storefront({ slug }: { slug: string }) {
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--store-primary)]">
               {store.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={store.logoUrl} alt={store.name} className="h-full w-full object-cover" />
+                <img src={imageUrl(store.logoUrl, IMAGE_WIDTH.thumb)} alt={store.name} className="h-full w-full object-cover" />
               ) : (
                 <StoreIcon size={20} aria-hidden="true" />
               )}
@@ -346,7 +347,8 @@ function Storefront({ slug }: { slug: string }) {
               </p>
             </div>
           ) : (
-            <ProductGrid products={visible} colorsOf={colorsOf} onOpen={setSelected} />
+            // A chave recomeça a lista desenhada aos poucos quando o filtro muda.
+            <ProductGrid key={`${activeCategory}|${search}`} products={visible} colorsOf={colorsOf} onOpen={setSelected} />
           )}
         </section>
       </main>
@@ -561,6 +563,10 @@ function inStockFirst<T>(items: T[], available: (item: T) => boolean) {
   return [...items].sort((a, b) => Number(available(b)) - Number(available(a)));
 }
 
+// Cards desenhados por vez. Uma loja com milhares de produtos desenharia (e baixaria as fotos de)
+// todos de uma vez; assim, os próximos entram quando o cliente chega perto do fim da lista.
+const RENDER_BATCH = 48;
+
 function ProductGrid({
   products,
   colorsOf,
@@ -596,13 +602,44 @@ function ProductGrid({
   // Cards sem nenhuma cor com estoque vão para o fim.
   const ordered = inStockFirst(shown, (p) => colorsOf(p).some(inStock)).slice(0, limit);
 
+  const [rendered, setRendered] = useState(RENDER_BATCH);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const hasMore = ordered.length > rendered;
+
+  // Perto do fim da lista (800px antes), desenha mais um lote. Um observador novo a cada lote
+  // confere de novo na hora: numa tela alta, os lotes seguem até passar do fim visível.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!hasMore || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && setRendered((n) => n + RENDER_BATCH),
+      { rootMargin: "800px 0px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, rendered]);
+
   return (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 min-[721px]:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-      {ordered.map((p) => (
-        // A chave inclui a cor mostrada: se ela mudar (ex.: estoque acabou), o card recomeça nela.
-        <ProductTile key={`${p.colorGroupId ?? "p"}-${p.id}`} product={p} colors={colorsOf(p)} onOpen={onOpen} />
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 min-[721px]:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
+        {ordered.slice(0, rendered).map((p) => (
+          // A chave inclui a cor mostrada: se ela mudar (ex.: estoque acabou), o card recomeça nela.
+          <ProductTile key={`${p.colorGroupId ?? "p"}-${p.id}`} product={p} colors={colorsOf(p)} onOpen={onOpen} />
+        ))}
+      </div>
+      {hasMore && (
+        <div ref={sentinelRef} className="flex justify-center pt-6">
+          {/* Para quem navega pelo teclado ou se o observador não disparar */}
+          <button
+            type="button"
+            onClick={() => setRendered((n) => n + RENDER_BATCH)}
+            className="h-10 rounded-lg border border-slate-200 bg-white px-5 text-label-md font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+          >
+            Mostrar mais produtos
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -669,9 +706,10 @@ function ProductTile({
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={cover.url}
+              src={imageUrl(cover.url, IMAGE_WIDTH.card)}
               alt={product.name}
               loading="lazy"
+              decoding="async"
               className={`h-full w-full object-cover transition duration-300 ${
                 second ? "group-hover:opacity-0" : "group-hover:scale-105"
               } ${outOfStock ? "opacity-60 grayscale-[40%]" : ""}`}
@@ -680,9 +718,10 @@ function ProductTile({
             {second && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={second.url}
+                src={imageUrl(second.url, IMAGE_WIDTH.card)}
                 alt=""
                 loading="lazy"
+                decoding="async"
                 className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100"
               />
             )}

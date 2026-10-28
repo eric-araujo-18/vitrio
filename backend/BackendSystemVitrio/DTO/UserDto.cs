@@ -10,5 +10,7 @@ namespace BackendSystemVitrio.DTO
         public string? Phone { get; set; }
         public string? Cpf { get; set; }
         public required string Role { get; set; }
+        // O lojista confirmou o e-mail (sem isso não cria loja nem assina plano).
+        public bool EmailConfirmed { get; set; }
     }
 }

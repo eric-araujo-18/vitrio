@@ -23,6 +23,7 @@ import {
 } from "@/lib/api_order";
 import {
   formatDateTime,
+  formatDeliveryFee,
   formatPrice,
   ORDER_NEXT_STATUS,
   ORDER_STATUS_LABELS,
@@ -287,6 +288,15 @@ export default function OrdersPage() {
                                   <strong className="shrink-0 text-on-surface">{formatPrice(item.subtotal)}</strong>
                                 </div>
                               ))}
+                              <div className="flex items-center justify-between gap-4 border-t border-slate-100 px-4 py-2.5 text-on-surface-variant">
+                                <span>
+                                  Entrega
+                                  {order.shippingFee == null && (
+                                    <span className="text-body-sm text-outline"> (combinar com o cliente, fora do total)</span>
+                                  )}
+                                </span>
+                                <strong className="shrink-0">{formatDeliveryFee(order.shippingFee)}</strong>
+                              </div>
                             </div>
 
                             {/* Endereço de entrega */}

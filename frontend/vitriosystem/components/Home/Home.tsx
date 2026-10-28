@@ -1,137 +1,173 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight,
   ArrowRight,
   BadgeCheck,
+  Boxes,
   Check,
   CircleCheck,
+  ClipboardList,
   CreditCard,
   Handshake,
-  Headphones,
+  Images,
+  MessageCircle,
   Package,
+  Palette,
   QrCode,
-  Receipt,
   Rocket,
-  ShieldCheck,
-  ShoppingCart,
+  Share2,
+  Smartphone,
   Store,
-  TrendingUp,
-  Zap,
+  Truck,
+  UserPlus,
+  Wallet,
 } from "lucide-react";
 import { useGuestOnly } from "@/lib/auth_context";
+import { getPlans, type Plan } from "@/lib/api_subscription";
+import { formatPrice } from "@/lib/format";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 /* ===========================
    DADOS DA PÁGINA
    Deixar o conteúdo em arrays facilita editar
    textos sem mexer no layout.
+   Tudo aqui descreve o que o sistema faz hoje: não prometa recurso,
+   integração, número de clientes ou certificação que não exista
+   (o Código de Defesa do Consumidor proíbe propaganda enganosa).
+   Os planos vêm da API (GET /api/Subscription/plans).
 =========================== */
 
 const navLinks = [
   { label: "Recursos", href: "#recursos" },
-  { label: "Diferenciais", href: "#diferenciais" },
+  { label: "Como funciona", href: "#como-funciona" },
+  { label: "Planos", href: "#planos" },
   { label: "Contato", href: "#contato" },
 ];
 
 const heroPerks = [
-  { icon: BadgeCheck, text: "14 dias de teste grátis" },
+  { icon: BadgeCheck, text: "Plano grátis, sem prazo para acabar" },
   { icon: CreditCard, text: "Não pede cartão no cadastro" },
-  { icon: Zap, text: "Configuração em menos de 5 min" },
+  { icon: Smartphone, text: "Vitrine pensada para o celular" },
 ];
 
 const integrations = [
-  { icon: QrCode, label: "Pix Instantâneo", color: "text-emerald-600" },
+  { icon: QrCode, label: "Pix", color: "text-emerald-600" },
+  { icon: CreditCard, label: "Cartão de crédito", color: "text-primary" },
   { icon: Handshake, label: "Mercado Pago", color: "text-sky-600" },
-  { icon: CreditCard, label: "Stripe Checkout", color: "text-primary" },
-  { icon: Store, label: "Nuvemshop", color: "text-indigo-600" },
-  { icon: ShoppingCart, label: "Shopify", color: "text-emerald-700" },
-  { icon: ArrowLeftRight, label: "Bling ERP", color: "text-secondary" },
+  { icon: MessageCircle, label: "WhatsApp", color: "text-emerald-700" },
 ];
 
 const features = [
   {
-    icon: Package,
-    tag: "MÓDULO 01",
+    icon: Palette,
+    tag: "VITRINE",
     iconBox: "bg-primary/10 text-primary",
     tagColor: "text-primary",
-    title: "Gestão Inteligente de Produtos",
-    text: "Cadastre SKUs com fotos em alta resolução, configure grades de variação (tamanhos, cores, voltagens) e defina alertas automáticos para nunca perder vendas por falta de estoque.",
+    title: "Uma vitrine com a cara da sua loja",
+    text: "Cada loja ganha um link próprio, com o seu logo e as suas cores. Compartilhado no WhatsApp ou no Instagram, o link aparece com o nome e o logo da loja.",
     showOrderTracker: false,
   },
   {
-    icon: Receipt,
-    tag: "MÓDULO 02",
+    icon: Package,
+    tag: "PRODUTOS",
     iconBox: "bg-secondary/10 text-secondary",
     tagColor: "text-secondary",
-    title: "Controle Total de Pedidos & Faturamento",
-    text: "Acompanhe o funil completo: do pagamento aprovado à separação, emissão de notas fiscais (NF-e/NFC-e) e despacho com código de rastreio enviado ao cliente via WhatsApp.",
+    title: "Produtos completos",
+    text: "Várias fotos por produto, tamanhos com estoque separado, a mesma peça em várias cores, preço promocional, destaques e categorias com subcategorias.",
+    showOrderTracker: false,
+  },
+  {
+    icon: ClipboardList,
+    tag: "PEDIDOS",
+    iconBox: "bg-secondary-fixed/50 text-secondary",
+    tagColor: "text-secondary",
+    title: "Pedidos organizados",
+    text: "O cliente compra sem precisar criar conta. O pedido aparece no painel e no seu e-mail, e você avança cada etapa até a entrega. O resumo da loja mostra os pedidos e o faturamento dos últimos 30 dias.",
     showOrderTracker: true,
   },
   {
-    icon: TrendingUp,
-    tag: "MÓDULO 03",
+    icon: Boxes,
+    tag: "ESTOQUE",
+    iconBox: "bg-primary/10 text-primary",
+    tagColor: "text-primary",
+    title: "Estoque sempre certo",
+    text: "Cada pedido baixa o estoque na hora, sem vender a mesma peça duas vezes. Se o pedido for cancelado, o estoque volta sozinho. Produto esgotado aparece como esgotado na vitrine.",
+    showOrderTracker: false,
+  },
+  {
+    icon: Wallet,
+    tag: "PAGAMENTO",
+    iconBox: "bg-secondary/10 text-secondary",
+    tagColor: "text-secondary",
+    title: "Pix e cartão no checkout",
+    text: "Conecte sua conta do Mercado Pago e receba por Pix ou cartão: o dinheiro cai direto na sua conta. Cancelou um pedido pago? O valor volta para o cliente pelo próprio Mercado Pago. Nos planos pagos; no grátis, você combina o pagamento com o cliente.",
+    showOrderTracker: false,
+  },
+  {
+    icon: Truck,
+    tag: "ENTREGA",
     iconBox: "bg-secondary-fixed/50 text-secondary",
     tagColor: "text-secondary",
-    title: "Relatórios & Insights Financeiros",
-    text: "Tenha clareza sobre sua margem de contribuição, DRE simplificada, curva ABC de produtos e fluxo projetado de entradas. Exporte relatórios em PDF e planilhas em 1 clique.",
+    title: "Entrega do seu jeito",
+    text: "Cobre uma taxa fixa, dê entrega grátis a partir de um valor ou combine com cada cliente. O carrinho mostra a regra antes de o cliente fechar o pedido.",
     showOrderTracker: false,
   },
 ];
 
+// As mesmas etapas do painel (Pendente → Confirmado → Enviado → Entregue).
 const orderSteps = [
-  { label: "Pago", status: "done" },
-  { label: "Separado", status: "done" },
-  { label: "NF Emitida", status: "current" },
+  { label: "Pendente", status: "done" },
+  { label: "Confirmado", status: "done" },
+  { label: "Enviado", status: "current" },
   { label: "Entregue", status: "pending" },
 ] as const;
 
-const pillars = [
+const steps = [
   {
-    icon: Headphones,
-    iconBox: "bg-secondary-fixed/50 text-secondary",
-    title: "Suporte Humano Dedicado",
-    text: "Fale com especialistas reais direto pelo WhatsApp em menos de 2 minutos.",
-  },
-  {
-    icon: ShieldCheck,
+    icon: UserPlus,
     iconBox: "bg-primary/10 text-primary",
-    title: "Alta Disponibilidade & Segurança",
-    text: "99.98% de estabilidade com servidores redundantes e criptografia ponta a ponta.",
+    title: "1. Crie a conta e a loja",
+    text: "Cadastre-se com nome, e-mail e CPF, confirme o e-mail e escolha o nome, o logo e as cores da loja.",
   },
   {
-    icon: Rocket,
+    icon: Images,
     iconBox: "bg-secondary/10 text-secondary",
-    title: "Setup Descomplicado",
-    text: "Importe seus produtos e comece a operar no mesmo dia sem consultoria técnica.",
+    title: "2. Cadastre os produtos",
+    text: "Fotos, preço, estoque, tamanhos e cores. As fotos são reduzidas automaticamente para a vitrine abrir rápido no celular.",
+  },
+  {
+    icon: Share2,
+    iconBox: "bg-secondary-fixed/50 text-secondary",
+    title: "3. Divulgue o link e venda",
+    text: "Mande o link da loja no WhatsApp, no Instagram ou onde quiser. Os pedidos chegam no painel e por e-mail.",
   },
 ];
 
 const ctaPerks = [
-  "Sem necessidade de cartão de crédito",
-  "Cancele quando quiser",
-  "Suporte de migração incluído",
+  "Não pede cartão no cadastro",
+  "Plano grátis sem prazo para acabar",
+  "Cancele a assinatura quando quiser",
 ];
 
+// Só links que levam a algum lugar. Termos de uso e política de privacidade entram aqui quando
+// as páginas existirem.
 const footerColumns = [
   {
-    title: "Produtos",
+    title: "Vitrio",
     links: [
-      "ERP Integrado",
-      "Controle de Estoque",
-      "Faturamento & PDV",
-      "CRM & Vendas",
-      "Automação & IA",
+      { label: "Recursos", href: "#recursos" },
+      { label: "Como funciona", href: "#como-funciona" },
+      { label: "Planos", href: "#planos" },
     ],
   },
   {
-    title: "Links Rápidos",
+    title: "Sua conta",
     links: [
-      "Soluções Setoriais",
-      "Planos & Preços",
-      "Sobre a Empresa",
-      "Termos de Serviço",
-      "Política de Privacidade",
+      { label: "Criar conta", href: "/auth/register" },
+      { label: "Entrar", href: "/auth/login" },
+      { label: "Esqueci minha senha", href: "/auth/forgot-password" },
     ],
   },
 ];
@@ -225,6 +261,104 @@ function OrderTracker() {
   );
 }
 
+// O que cada plano inclui, a partir dos limites que vêm da API.
+function planItems(plan: Plan): string[] {
+  return [
+    plan.maxStores === 1 ? "1 loja" : `Até ${plan.maxStores} lojas`,
+    plan.maxProductsPerStore == null
+      ? "Produtos ilimitados"
+      : `Até ${plan.maxProductsPerStore} produtos por loja`,
+    plan.allowsOnlinePayment
+      ? "Pix e cartão pelo Mercado Pago"
+      : "Pagamento combinado com o cliente",
+    "Pedidos, estoque e entrega no painel",
+  ];
+}
+
+/** Planos e preços lidos da API, os mesmos da tela de Assinatura. */
+function PlansSection({ cardClass }: { cardClass: string }) {
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getPlans()
+      .then((res) => {
+        if (!active) return;
+        if (res.status && res.dados) setPlans(res.dados);
+        else setFailed(true);
+      })
+      .catch(() => active && setFailed(true));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <section id="planos" className="w-full scroll-mt-20 bg-surface py-12">
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-8">
+        <SectionHeading
+          eyebrow="Planos"
+          eyebrowClass="rounded-full bg-primary-fixed/40 px-3 py-1 text-on-primary-fixed-variant"
+          title="Comece grátis e mude quando precisar"
+          text="Todos os planos têm vitrine, pedidos, estoque e entrega. Os pagos aumentam os limites e liberam o pagamento online."
+        />
+
+        {failed ? (
+          <p className="text-center text-body-md text-on-surface-variant">
+            Não foi possível carregar os planos agora. Você também vê todos eles em Assinatura, depois de criar a
+            conta.
+          </p>
+        ) : (
+          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+            {plans === null
+              ? [0, 1, 2].map((i) => (
+                  <div key={i} className={`${cardClass} h-80 animate-pulse`} aria-hidden="true" />
+                ))
+              : plans.map((plan) => (
+                  <article key={plan.code} className={`${cardClass} flex flex-col`}>
+                    <h3 className="text-title-md font-bold text-on-surface">{plan.name}</h3>
+                    {plan.description && (
+                      <p className="mt-1 text-body-sm text-on-surface-variant">{plan.description}</p>
+                    )}
+                    <p className="mt-4 mb-5 text-on-surface">
+                      {plan.priceMonthly > 0 ? (
+                        <>
+                          <span className="text-headline-md font-bold">{formatPrice(plan.priceMonthly)}</span>
+                          <span className="text-body-md text-on-surface-variant"> por mês</span>
+                        </>
+                      ) : (
+                        <span className="text-headline-md font-bold">Grátis</span>
+                      )}
+                    </p>
+                    <ul className="mb-6 flex flex-col gap-2 text-body-sm text-on-surface">
+                      {planItems(plan).map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <Check size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-600" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href="/auth/register"
+                      className="mt-auto inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-label-md font-semibold text-primary transition-colors hover:border-slate-300 hover:bg-surface"
+                    >
+                      Começar
+                    </Link>
+                  </article>
+                ))}
+          </div>
+        )}
+
+        <p className="mx-auto mt-6 max-w-3xl text-center text-body-sm text-on-surface-variant">
+          A assinatura é mensal, paga pelo Mercado Pago. Cancele quando quiser: o plano vale até o fim do período já
+          pago. As vendas pagas online têm as tarifas do Mercado Pago.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* ===========================
    PÁGINA
 =========================== */
@@ -292,8 +426,9 @@ export default function Home() {
               </h1>
 
               <p className="mb-8 max-w-2xl text-body-lg text-on-surface-variant">
-                Controle produtos, estoque, pedidos, clientes e vendas em um único lugar. Tudo em
-                um sistema moderno, rápido, intuitivo e com segurança corporativa.
+                Monte a vitrine da sua loja, cadastre produtos com fotos, tamanhos e cores, e receba pedidos pelo
+                link que você divulga no WhatsApp e no Instagram. O cliente paga por Pix ou cartão, ou combina
+                direto com você.
               </p>
 
               <div className="flex w-full flex-col items-center gap-4 sm:w-auto sm:flex-row">
@@ -301,7 +436,7 @@ export default function Home() {
                   href="/auth/register"
                   className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-8 text-title-md text-on-primary shadow-[0_2px_4px_rgba(0,74,198,0.2),0_8px_20px_rgba(37,99,235,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-container sm:w-auto"
                 >
-                  Começar Agora
+                  Criar minha loja grátis
                   <ArrowRight size={20} aria-hidden="true" />
                 </Link>
               </div>
@@ -318,11 +453,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* INTEGRAÇÕES */}
+        {/* PAGAMENTO E CONTATO */}
         <section className="w-full bg-surface-container-lowest py-8 shadow-sm">
           <div className="mx-auto flex max-w-[1600px] flex-col items-center justify-center gap-4 px-4 text-center sm:px-8">
             <p className="text-label-md font-semibold tracking-wider text-outline uppercase">
-              Integrado com os principais meios de pagamento e plataformas do Brasil
+              Seus clientes pagam e falam com você pelo que já usam
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 pt-1">
@@ -336,6 +471,11 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            <p className="text-body-sm text-on-surface-variant">
+              Pix e cartão pelo Mercado Pago, nos planos pagos. O botão do WhatsApp leva o cliente direto para a
+              conversa com a loja.
+            </p>
           </div>
         </section>
 
@@ -343,13 +483,13 @@ export default function Home() {
         <section id="recursos" className="w-full scroll-mt-20 bg-surface py-12">
           <div className="mx-auto max-w-[1600px] px-4 sm:px-8">
             <SectionHeading
-              eyebrow="Arquitetura Unificada"
+              eyebrow="Recursos"
               eyebrowClass="rounded-full bg-primary-fixed/40 px-3 py-1 text-on-primary-fixed-variant"
-              title="Tudo que sua loja precisa em um ecossistema rápido"
-              text="Abandone planilhas confusas e sistemas desconectados. O Vitrio reúne cada elo do seu negócio com extrema clareza operacional."
+              title="O que sua loja ganha com o Vitrio"
+              text="Da vitrine ao pedido entregue: produtos, estoque, pagamento e entrega no mesmo painel."
             />
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
               {features.map((feature) => (
                 <article key={feature.tag} className={`${cardClass} flex flex-col justify-between`}>
                   <div>
@@ -376,31 +516,34 @@ export default function Home() {
           </div>
         </section>
 
-        {/* DIFERENCIAIS */}
-        <section id="diferenciais" className="w-full scroll-mt-20 bg-surface-container-low/40 py-12">
+        {/* COMO FUNCIONA */}
+        <section id="como-funciona" className="w-full scroll-mt-20 bg-surface-container-low/40 py-12">
           <div className="mx-auto max-w-[1600px] px-4 sm:px-8">
             <SectionHeading
-              eyebrow="Diferencial Competitivo"
+              eyebrow="Como funciona"
               eyebrowClass="text-secondary"
-              title="Por que as lojas líderes confiam no Vitrio System?"
-              text="Construído para velocidade ininterrupta e estabilidade à prova de picos de tráfego, da Black Friday às operações diárias mais exigentes."
+              title="Sua loja no ar em três passos"
+              text="Sem instalar nada: tudo acontece no navegador, no computador ou no celular."
             />
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              {pillars.map((pillar) => (
-                <div key={pillar.title} className={`${cardClass} flex flex-col`}>
+              {steps.map((step) => (
+                <div key={step.title} className={`${cardClass} flex flex-col`}>
                   <div
-                    className={`mb-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${pillar.iconBox}`}
+                    className={`mb-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${step.iconBox}`}
                   >
-                    <pillar.icon size={26} aria-hidden="true" />
+                    <step.icon size={26} aria-hidden="true" />
                   </div>
-                  <h3 className="mb-1 text-title-md font-bold text-on-surface">{pillar.title}</h3>
-                  <p className="text-body-sm text-on-surface-variant">{pillar.text}</p>
+                  <h3 className="mb-1 text-title-md font-bold text-on-surface">{step.title}</h3>
+                  <p className="text-body-sm text-on-surface-variant">{step.text}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
+
+        {/* PLANOS */}
+        <PlansSection cardClass={cardClass} />
 
         {/* CTA FINAL */}
         <section className="w-full bg-surface py-12">
@@ -415,12 +558,11 @@ export default function Home() {
                 </div>
 
                 <h2 className="text-display-lg-mobile text-white md:text-display-lg">
-                  Pronto para transformar a gestão da sua loja?
+                  Pronto para abrir sua loja online?
                 </h2>
 
                 <p className="max-w-xl text-body-lg text-white/90">
-                  Junte-se a mais de 2.500 lojistas em todo o Brasil. Comece agora mesmo seu
-                  período de teste completo sem compromisso.
+                  Comece no plano grátis, monte a vitrine e mude de plano quando a loja crescer.
                 </p>
 
                 <div className="flex w-full flex-col items-center gap-4 pt-2 sm:w-auto sm:flex-row">
@@ -428,7 +570,7 @@ export default function Home() {
                     href="/auth/register"
                     className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-white px-8 text-title-md font-bold text-primary shadow-lg transition-all duration-200 hover:scale-105 hover:bg-surface-bright sm:w-auto"
                   >
-                    Vamos Começar
+                    Criar minha loja
                     <ArrowRight size={20} aria-hidden="true" />
                   </Link>
                 </div>
@@ -457,19 +599,8 @@ export default function Home() {
             <div className="flex flex-col gap-4 lg:col-span-2 lg:pr-8">
               <Logo />
               <p className="max-w-sm text-body-md text-on-surface-variant">
-                Plataforma completa para gestão de pequenas e médias empresas. Controle financeiro,
-                estoques omnichannel, CRM e automação em um único ecossistema integrado.
+                Vitrine online, pedidos, estoque e pagamentos para pequenos lojistas, em um só lugar.
               </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container px-2.5 py-1 text-label-sm text-secondary">
-                  <span className="h-2 w-2 rounded-full bg-secondary" />
-                  ISO 27001 Certified
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container px-2.5 py-1 text-label-sm text-primary">
-                  <span className="h-2 w-2 rounded-full bg-primary" />
-                  LGPD Compliant
-                </span>
-              </div>
             </div>
 
             {footerColumns.map((column) => (
@@ -478,12 +609,11 @@ export default function Home() {
                   {column.title}
                 </h4>
                 <ul className="flex flex-col gap-2 text-body-sm text-on-surface-variant">
-                  {column.links.map((label) => (
-                    <li key={label}>
-                      {/* TODO: apontar para as páginas reais quando existirem */}
-                      <a href="#" className="transition-colors hover:text-primary">
-                        {label}
-                      </a>
+                  {column.links.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="transition-colors hover:text-primary">
+                        {link.label}
+                      </Link>
                     </li>
                   ))}
                 </ul>
@@ -495,35 +625,23 @@ export default function Home() {
                 Contato & Suporte
               </h4>
               <ul className="flex flex-col gap-2 text-body-sm text-on-surface-variant">
-                <li>
-                  <a
-                    href="mailto:contato@vitrio.com"
-                    className="font-mono text-code-sm transition-colors hover:text-primary"
-                  >
-                    contato@vitrio.com
-                  </a>
-                </li>
-                <li>Atendimento nacional • Brasil</li>
-                <li>Segunda a Sexta, 08h às 19h</li>
-                <li>
-                  <a
-                    href="#"
-                    className="inline-flex items-center gap-1 pt-1 text-label-md text-primary hover:underline"
-                  >
-                    Central de Ajuda
-                  </a>
-                </li>
+                {SUPPORT_EMAIL && (
+                  <li>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                      className="font-mono text-code-sm transition-colors hover:text-primary"
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>
+                  </li>
+                )}
+                <li>Feito para lojistas do Brasil</li>
               </ul>
             </div>
           </div>
 
           <div className="flex flex-col items-center justify-between gap-4 rounded-xl bg-surface-container-low/50 px-6 py-4 text-body-sm text-on-surface-variant md:flex-row">
             <p>© {new Date().getFullYear()} Vitrio System. Todos os direitos reservados. Brasil.</p>
-            <div className="flex flex-wrap items-center justify-center gap-6 text-label-sm">
-              <a href="#" className="hover:text-on-surface">
-                Segurança e Privacidade
-              </a>
-            </div>
           </div>
         </div>
       </footer>

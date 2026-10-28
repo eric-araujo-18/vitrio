@@ -199,6 +199,10 @@ namespace BackendSystemVitrio.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<decimal?>("ShippingFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<string>("ShippingNeighborhood")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -650,8 +654,16 @@ namespace BackendSystemVitrio.Migrations
                     b.Property<DateTime?>("DeletionDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("DeliveryFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<decimal?>("FreeDeliveryFrom")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -846,6 +858,12 @@ namespace BackendSystemVitrio.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("EmailConfirmationSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EmailConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Name")
                         .IsRequired()

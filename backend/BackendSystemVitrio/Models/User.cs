@@ -22,6 +22,13 @@ namespace BackendSystemVitrio.Models
         public required byte[] PasswordHash { get; set; }
         public required byte[] PasswordSalt { get; set; }
 
+        // Quando o dono do e-mail clicou no link de confirmação (ou redefiniu a senha pelo e-mail).
+        // Null = e-mail não confirmado: o lojista não cria loja nem assina plano, e não recebe
+        // avisos de pedido. Trocar o e-mail volta para null.
+        public DateTime? EmailConfirmedAt { get; set; }
+        // Último e-mail de confirmação enviado (limita os reenvios).
+        public DateTime? EmailConfirmationSentAt { get; set; }
+
         public DateTime CreationDate { get; set; } = DateTime.UtcNow;
         public DateTime? DeletionDate { get; set; } = null;
 

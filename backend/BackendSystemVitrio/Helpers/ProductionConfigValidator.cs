@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace BackendSystemVitrio.Helpers
@@ -13,15 +14,33 @@ namespace BackendSystemVitrio.Helpers
         // O HS512 exige pelo menos 64 bytes. Vale em todos os ambientes (ver Program.cs).
         public const int MinJwtKeyBytes = 64;
 
-        public static bool IsValidJwtKey([NotNullWhen(true)] string? key)
-            => !string.IsNullOrWhiteSpace(key) && Encoding.UTF8.GetByteCount(key) >= MinJwtKeyBytes;
+        // SHA-256 das chaves que já ficaram no histórico do git (appsettings.json dos commits 65776bd
+        // a 8692398). O repositório é público, então qualquer um pode montar tokens com elas: a API
+        // recusa essas chaves em qualquer ambiente. Só o hash fica aqui, nunca a chave.
+        private static readonly HashSet<string> LeakedJwtKeyHashes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "85450135f52156510901728efb8eead9723af26dbaa761a6290caf0c4f011a7b",
+            "6aea189afac416594f0e9be53ca71865a5c0f70e42a79f14e757a04d766903db",
+        };
+
+        public static bool IsValidJwtKey([NotNullWhen(true)] string? key) => JwtKeyProblem(key) is null;
+
+        // Null quando a chave serve; senão, o motivo (sem mostrar a chave).
+        public static string? JwtKeyProblem(string? key)
+        {
+            if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < MinJwtKeyBytes)
+                return $"Jwt:Key precisa ter pelo menos {MinJwtKeyBytes} caracteres aleatórios.";
+            if (LeakedJwtKeyHashes.Contains(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))))
+                return "Jwt:Key é uma chave que já foi publicada no histórico do repositório. Gere uma nova (openssl rand -base64 48).";
+            return null;
+        }
 
         public static List<string> Validate(IConfiguration config)
         {
             var problems = new List<string>();
 
-            if (!IsValidJwtKey(config["Jwt:Key"]))
-                problems.Add($"Jwt:Key precisa ter pelo menos {MinJwtKeyBytes} caracteres aleatórios (variável Jwt__Key).");
+            if (JwtKeyProblem(config["Jwt:Key"]) is { } jwtProblem)
+                problems.Add(jwtProblem + " (variável Jwt__Key)");
 
             if (string.IsNullOrWhiteSpace(config.GetConnectionString("DefaultConnection")))
                 problems.Add("ConnectionStrings:DefaultConnection não configurada (variável ConnectionStrings__DefaultConnection).");
@@ -94,6 +113,20 @@ namespace BackendSystemVitrio.Helpers
             if (cloudinaryMissing.Count > 0 && cloudinaryMissing.Count < cloudinaryKeys.Length)
                 problems.Add("Cloudinary configurado pela metade: falta " +
                              string.Join(", ", cloudinaryMissing.Select(k => $"Cloudinary:{k}")) + ".");
+
+            // ===== Captcha do checkout (Turnstile) =====
+            // Opcional, mas tudo ou nada: só com a chave pública a vitrine mostraria um captcha que a
+            // API não confere; só com a secreta, nada pediria o captcha.
+            var turnstileSite = !string.IsNullOrWhiteSpace(config["Turnstile:SiteKey"]);
+            var turnstileSecret = !string.IsNullOrWhiteSpace(config["Turnstile:SecretKey"]);
+            if (turnstileSite != turnstileSecret)
+                problems.Add($"Turnstile configurado pela metade: falta Turnstile:{(turnstileSite ? "SecretKey" : "SiteKey")}.");
+
+            // ===== Monitoramento (Sentry) =====
+            var sentryDsn = config["Sentry:Dsn"];
+            if (!string.IsNullOrWhiteSpace(sentryDsn) &&
+                (!Uri.TryCreate(sentryDsn.Trim(), UriKind.Absolute, out var dsn) || dsn.Scheme != Uri.UriSchemeHttps))
+                problems.Add("Sentry:Dsn precisa ser o endereço https que o Sentry mostra no projeto (ou fique vazia).");
 
             return problems;
         }

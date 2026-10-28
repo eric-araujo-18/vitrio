@@ -29,13 +29,16 @@ namespace BackendSystemVitrio.Services.AuthService
         private readonly ILogger<AuthService> _logger;
         private readonly IConfiguration _configuration;
         private readonly EmailQueue _emailQueue;
+        private readonly EmailConfirmation _emailConfirmation;
 
-        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger, EmailQueue emailQueue)
+        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger, EmailQueue emailQueue,
+            EmailConfirmation emailConfirmation)
         {
             _context = context;
             _logger = logger;
             _configuration = configuration;
             _emailQueue = emailQueue;
+            _emailConfirmation = emailConfirmation;
         }
 
         public async Task<Response<string>> RegisterAsync(RegisterDto dto)
@@ -128,8 +131,12 @@ namespace BackendSystemVitrio.Services.AuthService
                 _context.User.Add(user);
                 await _context.SaveChangesAsync();
 
+                // O lojista só cria loja e assina plano depois de confirmar que o e-mail é dele.
+                _emailConfirmation.Send(user);
+                await _context.SaveChangesAsync();
+
                 response.Dados = "Usuário cadastrado com sucesso.";
-                response.Mensagem = null;
+                response.Mensagem = "Conta criada. Enviamos um link de confirmação para o seu e-mail.";
                 response.Status = true;
             }
             catch (Exception ex)
@@ -442,6 +449,8 @@ namespace BackendSystemVitrio.Services.AuthService
                 PasswordHelper.CreatePasswordHash(dto.NewPassword, out var hash, out var salt);
                 user.PasswordHash = hash;
                 user.PasswordSalt = salt;
+                // Quem abriu o link recebido no e-mail provou que o e-mail é dele.
+                user.EmailConfirmedAt ??= DateTime.UtcNow;
 
                 // O link vale uma vez só.
                 _context.PasswordResetToken.Remove(reset);
@@ -459,6 +468,62 @@ namespace BackendSystemVitrio.Services.AuthService
             {
                 _logger.LogError(ex, "Erro ao redefinir senha");
                 return Response<string>.Fail("Erro ao redefinir senha. Tente novamente.");
+            }
+        }
+
+        // ===================== Confirmação de e-mail =====================
+
+        public async Task<Response<string>> ConfirmEmailAsync(ConfirmEmailDto dto)
+        {
+            const string invalid = "Este link de confirmação expirou ou não é mais válido. Entre na sua conta e peça um novo.";
+            try
+            {
+                if (_emailConfirmation.ReadToken(dto.Token) is not { } data)
+                    return Response<string>.Fail(invalid);
+
+                var user = await _context.User.FirstOrDefaultAsync(u => u.Id == data.UserId && u.DeletionDate == null);
+                // O e-mail mudou depois do envio: o link era do endereço antigo.
+                if (user is null || !EmailConfirmation.MatchesEmail(data.EmailTag, user.Email))
+                    return Response<string>.Fail(invalid);
+
+                if (user.EmailConfirmedAt is null)
+                {
+                    user.EmailConfirmedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Response<string>.Ok(user.Email, "E-mail confirmado. Agora você já pode criar sua loja.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao confirmar e-mail");
+                return Response<string>.Fail("Erro ao confirmar o e-mail. Tente novamente.");
+            }
+        }
+
+        public async Task<Response<string>> ResendEmailConfirmationAsync(int userId)
+        {
+            try
+            {
+                var user = await _context.User.FirstOrDefaultAsync(u => u.Id == userId && u.DeletionDate == null);
+                if (user is null)
+                    return Response<string>.Fail("Usuário não encontrado.");
+
+                if (user.EmailConfirmedAt is not null)
+                    return Response<string>.Ok(user.Email, "Seu e-mail já está confirmado.");
+
+                if (user.EmailConfirmationSentAt > DateTime.UtcNow - EmailConfirmation.ResendCooldown)
+                    return Response<string>.Fail("Acabamos de enviar o link. Espere uns minutos e confira também a caixa de spam.");
+
+                _emailConfirmation.Send(user);
+                await _context.SaveChangesAsync();
+
+                return Response<string>.Ok(user.Email, $"Enviamos um novo link para {user.Email}.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao reenviar a confirmação de e-mail");
+                return Response<string>.Fail("Não foi possível enviar o e-mail agora. Tente novamente em instantes.");
             }
         }
 

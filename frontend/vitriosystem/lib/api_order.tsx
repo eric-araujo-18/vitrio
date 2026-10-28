@@ -31,6 +31,8 @@ export interface Order {
   customerEmail: string | null;
   notes: string | null;
   status: OrderStatus;
+  /** Taxa de entrega já somada ao total. null = a combinar com o cliente. */
+  shippingFee: number | null;
   total: number;
   paymentMethod: OrderPaymentMethod;
   paymentStatus: OrderPaymentStatus;
@@ -105,6 +107,8 @@ export interface CustomerOrder {
   id: number;
   code: string;
   status: OrderStatus;
+  /** Taxa de entrega já somada ao total. null = a combinar com a loja. */
+  shippingFee: number | null;
   total: number;
   paymentMethod: OrderPaymentMethod;
   paymentStatus: OrderPaymentStatus;

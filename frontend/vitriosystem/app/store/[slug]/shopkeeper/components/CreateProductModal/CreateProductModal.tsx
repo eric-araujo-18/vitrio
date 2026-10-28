@@ -25,6 +25,8 @@ import { getCategoriesByStore, type Category } from "@/lib/api_category";
 import { uploadImage } from "@/lib/upload";
 import { SIZE_GRIDS, detectSizeGrid, type SizeGrid } from "@/lib/sizes";
 import { useBackdropDismiss } from "@/lib/backdrop";
+import { moneyToInput, parseMoney } from "@/lib/format";
+import { IMAGE_WIDTH, imageUrl } from "@/lib/image";
 import { ErrorBox, btnPrimary, btnSecondary, hint, input, label } from "../Ui";
 
 const MAX_IMAGES = 8;
@@ -51,18 +53,6 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9\s-]/g, "")
     .trim()
     .replace(/[\s-]+/g, "-");
-}
-
-// "12,50" / "12.50" / "1.234,56" -> 12.5 / 12.5 / 1234.56
-function parseMoney(value: string): number {
-  const clean = value.trim().replace(/\s|R\$/g, "");
-  if (!clean) return NaN;
-  const normalized = clean.includes(",") ? clean.replace(/\./g, "").replace(",", ".") : clean;
-  return Number(normalized);
-}
-
-function moneyToInput(value: number | null | undefined) {
-  return value == null ? "" : value.toFixed(2).replace(".", ",");
 }
 
 // Atalhos de cor: um clique preenche nome e bolinha.
@@ -750,7 +740,7 @@ export default function CreateProductModal({ storeId, product, onClose, onSaved 
                       ) : (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img.url} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover" />
+                          <img src={imageUrl(img.url, IMAGE_WIDTH.thumb)} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover" />
 
                           {index === 0 ? (
                             <span className="absolute bottom-1 left-1 rounded-full bg-primary-container px-1.5 py-0.5 text-[10px] font-bold text-white">

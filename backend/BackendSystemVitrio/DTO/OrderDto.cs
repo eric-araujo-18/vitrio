@@ -30,6 +30,10 @@ namespace BackendSystemVitrio.DTO
 
         // Online = pagar agora pelo Mercado Pago (só se a loja oferece; ver PublicStoreDto.OnlinePayment).
         public OrderPaymentMethod PaymentMethod { get; set; } = OrderPaymentMethod.Arrange;
+
+        // Resposta do captcha (Cloudflare Turnstile) do checkout. Exigida só quando o servidor tem
+        // Turnstile:SecretKey (ver PublicStoreDto.CaptchaSiteKey).
+        public string? CaptchaToken { get; set; }
     }
 
     // ===== Painel do lojista =====
@@ -62,6 +66,8 @@ namespace BackendSystemVitrio.DTO
         public string? CustomerEmail { get; set; }
         public string? Notes { get; set; }
         public OrderStatus Status { get; set; }
+        // Taxa de entrega já somada ao Total. Null = frete a combinar com o cliente.
+        public decimal? ShippingFee { get; set; }
         public decimal Total { get; set; }
         public OrderPaymentMethod PaymentMethod { get; set; }
         public OrderPaymentStatus PaymentStatus { get; set; }
@@ -81,6 +87,8 @@ namespace BackendSystemVitrio.DTO
         public int Id { get; set; }
         public required string Code { get; set; }
         public OrderStatus Status { get; set; }
+        // Taxa de entrega já somada ao Total. Null = frete a combinar com a loja.
+        public decimal? ShippingFee { get; set; }
         public decimal Total { get; set; }
         public OrderPaymentMethod PaymentMethod { get; set; }
         public OrderPaymentStatus PaymentStatus { get; set; }
@@ -122,6 +130,8 @@ namespace BackendSystemVitrio.DTO
     public class OrderCreatedDto
     {
         public required string Code { get; set; }
+        // Taxa de entrega já somada ao Total. Null = frete a combinar com a loja.
+        public decimal? ShippingFee { get; set; }
         public decimal Total { get; set; }
         public string? StorePhone { get; set; }
         public OrderPaymentMethod PaymentMethod { get; set; }

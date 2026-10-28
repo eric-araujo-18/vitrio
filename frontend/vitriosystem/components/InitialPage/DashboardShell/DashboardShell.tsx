@@ -7,8 +7,9 @@ import SidebarInitialPage from "@/components/InitialPage/Sidebar/SidebarInitialP
 import Header from "@/components/InitialPage/Header/Header";
 import { useSubscriptionWatcher } from "@/components/InitialPage/SubscriptionWatcher/useSubscriptionWatcher";
 import SubscriptionConfirmedToast from "@/components/InitialPage/SubscriptionWatcher/SubscriptionConfirmedToast";
+import EmailConfirmationBanner from "@/components/InitialPage/EmailConfirmationBanner/EmailConfirmationBanner";
 import { isStaff, useRequireAuth } from "@/lib/auth_context";
-import type { User } from "@/lib/api";
+import { ROLES, type User } from "@/lib/api";
 
 interface DashboardShellProps {
   title?: ReactNode;
@@ -57,6 +58,8 @@ export default function DashboardShell({ title, subtitle, children }: DashboardS
         <Header />
 
         <section className="animate-[fadeIn_0.35s_ease] p-6 md:p-10">
+          {user.role === ROLES.SHOPKEEPER && !user.emailConfirmed && <EmailConfirmationBanner user={user} />}
+
           {(title || subtitle) && (
             <div className="mb-9">
               {title && (
